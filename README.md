@@ -18,6 +18,7 @@ This repository captures the July 2026 local audit of three related failure surf
 | `records/local-audit-snapshot.md` | Local host/process/version/storage snapshot gathered during review. |
 | `records/external-references.md` | Public issue and official documentation reference snapshot. |
 | `records/external-reference-snapshot.json` | Machine-readable GitHub issue metadata snapshot. |
+| `scripts/chatgpt-fix-doctor.ps1` | Read-only dry-run doctor for refreshing local package, launcher, process, and `.codex` risk evidence. |
 | `materials/reports/` | Previous bilingual NTFS/nonpaged-pool reports and PDFs. |
 | `materials/screenshots/` | Screenshot supplied by the user for the image/base64 storage issue. |
 | `materials/installers/` | Local mitigation installer artifact, stored for traceability only. |
@@ -25,13 +26,27 @@ This repository captures the July 2026 local audit of three related failure surf
 
 ## Current Status
 
-The review phase is complete. No installer was executed, no active process was terminated, no logs were cleaned, and no official package files were modified during this archiving pass.
+The review phase is complete, and the first no-side-effect doctor prototype is available. No installer is executed, no active process is terminated, no logs are cleaned, and no official package files are modified by the doctor.
 
-The next useful step is an implementation design/prototype for a wrapper that:
+Run the doctor from this repository with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\chatgpt-fix-doctor.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\chatgpt-fix-doctor.ps1 -Json
+```
+
+The doctor reports:
+
+- latest registered official `OpenAI.Codex` package path, version, and `ChatGPT.exe` SHA-256;
+- current ChatGPT shortcut target and local mitigation state;
+- version drift between the official package and local isolated baseline;
+- candidate MCP/`uv`/Node/Python/PowerShell descendants that the local lifecycle model must account for;
+- `.codex` session and `logs_2.sqlite` size risk.
+
+The next useful step is a reviewed `ChatGPT-NTFS-Fix`-style launcher/baseline implementation that:
 
 - discovers the latest registered official `OpenAI.Codex` package on each launch;
 - prepares an isolated side-by-side runtime copy when the official version changes;
 - applies local mitigations only to the isolated runtime or launcher environment;
-- adds a child-process watchdog for MCP/`uv`/Node/Python/PowerShell descendants;
+- accounts for MCP/`uv`/Node/Python/PowerShell lifecycle from the launcher-owned isolated runtime rather than relying on a separate watchdog as the primary mechanism;
 - caps or externalizes image-heavy history/log payloads without corrupting active sessions.
-
