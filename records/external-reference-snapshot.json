@@ -1,0 +1,95 @@
+{
+  "generated_at": "2026-07-27T22:33:05+08:00",
+  "issues": [
+    {
+      "number": 12491,
+      "state": "open",
+      "title": "Codex.app GUI: MCP child processes not reaped after task completion — 1300+ zombies, 37GB memory leak",
+      "created_at": "2026-02-22T08:31:38Z",
+      "updated_at": "2026-07-24T15:46:00Z",
+      "url": "https://github.com/openai/codex/issues/12491",
+      "category": "process-lifecycle"
+    },
+    {
+      "number": 15379,
+      "state": "open",
+      "title": "Orphaned child processes persist after Codex parent exits",
+      "created_at": "2026-03-21T09:09:23Z",
+      "updated_at": "2026-05-03T16:06:55Z",
+      "url": "https://github.com/openai/codex/issues/15379",
+      "category": "process-lifecycle"
+    },
+    {
+      "number": 20980,
+      "state": "closed",
+      "title": "Codex App starts a full local MCP process stack per opened chat/thread, causing memory and process growth",
+      "created_at": "2026-05-04T10:49:35Z",
+      "updated_at": "2026-05-04T16:10:53Z",
+      "url": "https://github.com/openai/codex/issues/20980",
+      "category": "process-lifecycle"
+    },
+    {
+      "number": 25935,
+      "state": "open",
+      "title": "Codex appears to leave orphaned git.exe processes on Windows.",
+      "created_at": "2026-06-02T20:31:25Z",
+      "updated_at": "2026-07-22T02:06:12Z",
+      "url": "https://github.com/openai/codex/issues/25935",
+      "category": "process-lifecycle"
+    },
+    {
+      "number": 33913,
+      "state": "open",
+      "title": "Windows command execution can hang indefinitely when descendant processes inherit stdout/stderr handles, causing agent turns to become stuck forever",
+      "created_at": "2026-07-17T22:21:42Z",
+      "updated_at": "2026-07-17T22:23:02Z",
+      "url": "https://github.com/openai/codex/issues/33913",
+      "category": "process-lifecycle"
+    },
+    {
+      "number": 24948,
+      "state": "open",
+      "title": "Codex session logs grow to 700MB-2GB from repeated compaction history and raw tool output",
+      "created_at": "2026-05-28T18:47:59Z",
+      "updated_at": "2026-07-27T01:45:46Z",
+      "url": "https://github.com/openai/codex/issues/24948",
+      "category": "history-and-image-payload"
+    },
+    {
+      "number": 23257,
+      "state": "open",
+      "title": "Desktop compaction repeatedly embeds full image base64 in compacted checkpoints",
+      "created_at": "2026-05-18T06:52:11Z",
+      "updated_at": "2026-07-26T01:00:41Z",
+      "url": "https://github.com/openai/codex/issues/23257",
+      "category": "history-and-image-payload"
+    },
+    {
+      "number": 28531,
+      "state": "open",
+      "title": "Codex Desktop can crash or freeze when opening image-heavy sessions because session JSONL embeds base64 image payloads",
+      "created_at": "2026-06-16T13:58:53Z",
+      "updated_at": "2026-07-15T01:08:24Z",
+      "url": "https://github.com/openai/codex/issues/28531",
+      "category": "history-and-image-payload"
+    },
+    {
+      "number": 34863,
+      "state": "open",
+      "title": "Codex app-server reaches 27 GB footprint and 36 GB swap after compacted records grow one rollout JSONL to 10.2 GB with repeated inline PNG data URLs",
+      "created_at": "2026-07-23T02:38:13Z",
+      "updated_at": "2026-07-23T02:39:24Z",
+      "url": "https://github.com/openai/codex/issues/34863",
+      "category": "history-and-image-payload"
+    },
+    {
+      "number": 35458,
+      "state": "open",
+      "title": "Codex Desktop: screenshots re-persisted in full on every compaction and inherited by subagent forks - ~/.codex/sessions reached ~165 GiB (95% base64 images)",
+      "created_at": "2026-07-26T10:05:55Z",
+      "updated_at": "2026-07-26T10:07:16Z",
+      "url": "https://github.com/openai/codex/issues/35458",
+      "category": "history-and-image-payload"
+    }
+  ]
+}

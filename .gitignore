@@ -1,0 +1,15 @@
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.bak
+*.log
+*.sqlite-shm
+*.sqlite-wal
+
+# Keep raw private runtime state out of this evidence repo.
+.codex/
+.cc-connect/
+raw-sessions/
+secrets/
+credentials/
