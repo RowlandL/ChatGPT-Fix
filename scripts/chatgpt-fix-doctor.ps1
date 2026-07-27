@@ -523,10 +523,42 @@ function Get-ProcessSnapshot {
             }
     )
 
+    $candidateSummaryByName = @(
+        $candidates |
+            Group-Object -Property name |
+            Sort-Object -Property Count -Descending |
+            ForEach-Object {
+                [pscustomobject][ordered]@{
+                    name           = $_.Name
+                    count          = $_.Count
+                    oldest_minutes = [Math]::Round((($_.Group | Measure-Object -Property age_minutes -Maximum).Maximum), 1)
+                    private_mb     = [Math]::Round((($_.Group | Measure-Object -Property private_mb -Sum).Sum), 1)
+                    working_set_mb = [Math]::Round((($_.Group | Measure-Object -Property working_set_mb -Sum).Sum), 1)
+                }
+            }
+    )
+
+    $candidateSummaryByKind = @(
+        $candidates |
+            Group-Object -Property command_kind |
+            Sort-Object -Property Count -Descending |
+            ForEach-Object {
+                [pscustomobject][ordered]@{
+                    command_kind   = $_.Name
+                    count          = $_.Count
+                    oldest_minutes = [Math]::Round((($_.Group | Measure-Object -Property age_minutes -Maximum).Maximum), 1)
+                    private_mb     = [Math]::Round((($_.Group | Measure-Object -Property private_mb -Sum).Sum), 1)
+                    working_set_mb = [Math]::Round((($_.Group | Measure-Object -Property working_set_mb -Sum).Sum), 1)
+                }
+            }
+    )
+
     return [pscustomobject][ordered]@{
         age_threshold_minutes = $AgeMinutes
         relevant_process_count = $relevant.Count
         grouped = $grouped
+        lifecycle_candidate_summary_by_name = $candidateSummaryByName
+        lifecycle_candidate_summary_by_kind = $candidateSummaryByKind
         lifecycle_candidates = @($candidates | Sort-Object -Property name, pid)
     }
 }
@@ -687,6 +719,15 @@ Write-Output ''
 
 Write-Output 'Process lifecycle candidates'
 Write-Output ('- Candidate count: {0}' -f $candidateCount)
+Write-Output '- Candidate summary by process name:'
+foreach ($group in @($processes.lifecycle_candidate_summary_by_name | Select-Object -First 12)) {
+    Write-Output ('  - {0}: count={1} oldest_min={2} private_mb={3} ws_mb={4}' -f $group.name, $group.count, $group.oldest_minutes, $group.private_mb, $group.working_set_mb)
+}
+Write-Output '- Candidate summary by command kind:'
+foreach ($group in @($processes.lifecycle_candidate_summary_by_kind | Select-Object -First 12)) {
+    Write-Output ('  - {0}: count={1} oldest_min={2} private_mb={3} ws_mb={4}' -f $group.command_kind, $group.count, $group.oldest_minutes, $group.private_mb, $group.working_set_mb)
+}
+Write-Output '- Candidate examples:'
 foreach ($candidate in @($processes.lifecycle_candidates | Select-Object -First 20)) {
     Write-Output ('  - PID {0} {1} kind={2} age_min={3} private_mb={4} ws_mb={5}' -f $candidate.pid, $candidate.name, $candidate.command_kind, $candidate.age_minutes, $candidate.private_mb, $candidate.working_set_mb)
 }

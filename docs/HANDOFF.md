@@ -57,6 +57,7 @@ Validation on 2026-07-28:
 - `read_only = true`;
 - current status was `high-risk` because `.codex/logs_2.sqlite` exceeded the high threshold;
 - current evidence also showed official package `26.721.4979.0`, local mitigation source `26.707.8479.0`, and lifecycle candidates present. The candidate count is a live machine snapshot and will vary between doctor runs.
+- The doctor now prints lifecycle candidate summaries by process name and command kind so `python.exe` residual chains are visible instead of being hidden behind `bocha-search-mcp.exe` examples.
 
 ## Next Step
 
