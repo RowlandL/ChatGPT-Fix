@@ -14,6 +14,7 @@ This repository captures the July 2026 local audit of three related failure surf
 |---|---|
 | `docs/审查文档.md` | Main review document with findings, evidence, and recommended architecture. |
 | `docs/HANDOFF.md` | Current handoff: where the work stopped and what the next session should do. |
+| `docs/修复升级执行方向报告.md` | Execution-direction report for upgrading the current ChatGPT-NTFS-Fix-style mitigation. |
 | `records/conversation-visible.md` | Redacted visible user/assistant conversation export from the local Codex session. |
 | `records/local-audit-snapshot.md` | Local host/process/version/storage snapshot gathered during review. |
 | `records/external-references.md` | Public issue and official documentation reference snapshot. |
