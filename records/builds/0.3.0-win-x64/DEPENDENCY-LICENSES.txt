@@ -1,6 +1,6 @@
 schema=chatgpt_fix.dependency_licenses.v1
 release=0.3.0
-source_commit=b32579a141ebc1fe97e4b4ba821e466ce839c305
+source_commit=ad6ff3b22db1f3c9405f771a99c1dd90bc5db9eb
 third_party_cargo_packages=0
 workspace_package=chatgpt-fix-core@0.3.0|license=NOASSERTION
 workspace_package=chatgpt-fix-launcher@0.3.0|license=NOASSERTION

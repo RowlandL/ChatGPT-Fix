@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use chatgpt_fix_core::{ReceiptV1, SafeRelativePath, Sha256Digest, sha256_bytes};
 
-const SOURCE_COMMIT: &str = "b32579a141ebc1fe97e4b4ba821e466ce839c305";
+const SOURCE_COMMIT: &str = "ad6ff3b22db1f3c9405f771a99c1dd90bc5db9eb";
 const TOOLCHAIN: &str = "rustc 1.97.1 (8bab26f4f 2026-07-14); x86_64-pc-windows-msvc";
 const RELEASE_DIR: &str = "records/builds/0.3.0-win-x64";
 
@@ -11,17 +11,17 @@ const ARTIFACTS: [(&str, u64, &str); 3] = [
     (
         "ChatGPT-Fix-Launcher.exe",
         246_272,
-        "80dd940f0cf1b4365a552150eea202043403973652632633594a238186df1bc2",
+        "8453683bf51ff14f1128f17afa99359a635dc82ef296b03f340237c255260ff3",
     ),
     (
         "ChatGPT-Fix-Manager.exe",
         233_472,
-        "9d6adcca04b47718b562e7a267cb1900c6330a144212358331501b2f831ecf5c",
+        "931a40f845833290bfb4be349247d727a75e57132813d27fea368db1d7c81cad",
     ),
     (
         "ChatGPT-Fix-Packer.exe",
         233_984,
-        "c072628ffb798a3e5423f269888bac506e228326bef18a4135f469d5e6d9493c",
+        "58d1a545ebea362d257220443f4fda680b96e7bf427c7918e9a90a3cf8895c66",
     ),
 ];
 
@@ -43,8 +43,8 @@ fn tracked_build_evidence_is_exact_and_self_consistent() {
             "version=0.3.0\n",
             "target=x86_64-pc-windows-msvc\n",
             "profile=release\n",
-            "source_commit=b32579a141ebc1fe97e4b4ba821e466ce839c305\n",
-            "chatgpt_fix_source_commit=b32579a141ebc1fe97e4b4ba821e466ce839c305\n",
+            "source_commit=ad6ff3b22db1f3c9405f771a99c1dd90bc5db9eb\n",
+            "chatgpt_fix_source_commit=ad6ff3b22db1f3c9405f771a99c1dd90bc5db9eb\n",
             "cargo_lock_sha256=ca9631f717ecd82f4a86c866a4976b3fe02cd76db00c421b830d9da957345f7c\n",
             "rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)\n",
             "cargo=cargo 1.97.1 (c980f4866 2026-06-30)\n",
@@ -98,7 +98,7 @@ fn tracked_build_evidence_is_exact_and_self_consistent() {
         [
             "schema=chatgpt_fix.dependency_licenses.v1",
             "release=0.3.0",
-            "source_commit=b32579a141ebc1fe97e4b4ba821e466ce839c305",
+            "source_commit=ad6ff3b22db1f3c9405f771a99c1dd90bc5db9eb",
             "third_party_cargo_packages=0",
             "workspace_package=chatgpt-fix-core@0.3.0|license=NOASSERTION",
             "workspace_package=chatgpt-fix-launcher@0.3.0|license=NOASSERTION",
