@@ -61,6 +61,7 @@ fn emits_deterministic_launch_and_receipt_without_starting() {
         .to_json()
         .expect("plan must serialize");
     let plan_sha256 = sha256_bytes(plan_json.as_bytes());
+    let source_commit = option_env!("CHATGPT_FIX_SOURCE_COMMIT").unwrap_or("unrecorded");
     let expected = format!(
         concat!(
             "{{\"schema\":\"chatgpt_fix.launch.v1\",",
@@ -76,11 +77,12 @@ fn emits_deterministic_launch_and_receipt_without_starting() {
             "\"plan_sha256\":\"{}\",",
             "\"artifact\":null,",
             "\"artifact_sha256\":null,",
-            "\"source_commit\":\"unrecorded\",",
+            "\"source_commit\":\"{}\",",
             "\"toolchain\":\"rustc-1.97.1-x86_64-pc-windows-msvc\",",
             "\"signing_status\":\"unsigned\"}}\n",
         ),
-        plan_sha256.as_str()
+        plan_sha256.as_str(),
+        source_commit
     );
 
     let output = run_dry_run(&root);
