@@ -40,7 +40,13 @@ fn assert_usage_error(command: &mut Command) {
     assert_eq!(output.status.code(), Some(2), "stderr: {:?}", output.stderr);
     assert!(output.stdout.is_empty(), "stdout: {:?}", output.stdout);
     assert_eq!(
-        output.stderr, b"Usage: ChatGPT-Fix-Launcher --version\n",
+        output.stderr,
+        concat!(
+            "Usage: ChatGPT-Fix-Launcher --version\n",
+            "       ChatGPT-Fix-Launcher dry-run --fixture-root <path>\n",
+            "       ChatGPT-Fix-Launcher launch --live <path>\n",
+        )
+        .as_bytes(),
         "stderr: {:?}",
         output.stderr
     );
