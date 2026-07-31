@@ -54,6 +54,13 @@ pub struct PlanAction {
 
 impl PlanAction {
     pub fn validate(&self) -> Result<(), ContractError> {
+        if self.execute {
+            return Err(ContractError::new(
+                "invariant_violation",
+                "execute",
+                "plan actions must not execute",
+            ));
+        }
         Ok(())
     }
 

@@ -142,6 +142,35 @@ fn plan_action_validation_accepts_a_safe_target() {
 }
 
 #[test]
+fn plan_action_validation_rejects_execution() {
+    let action = PlanAction {
+        kind: PlanActionKind::WouldStart,
+        target: path("launcher/ChatGPT.exe"),
+        execute: true,
+    };
+
+    assert_contract_error(
+        &action.validate().unwrap_err(),
+        (
+            "invariant_violation",
+            "execute",
+            "plan actions must not execute",
+        ),
+    );
+
+    let mut plan = ready_plan();
+    plan.actions[0].execute = true;
+    assert_contract_error(
+        &plan.validate().unwrap_err(),
+        (
+            "invariant_violation",
+            "execute",
+            "plan actions must not execute",
+        ),
+    );
+}
+
+#[test]
 fn plan_action_json_is_exact_compact_and_escapes_a_quoted_target() {
     let action = PlanAction {
         kind: PlanActionKind::WouldWrite,
