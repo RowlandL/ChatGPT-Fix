@@ -1,0 +1,14 @@
+[workspace]
+members = [
+    "src/chatgpt-fix-core",
+    "src/chatgpt-fix-packer",
+    "src/chatgpt-fix-manager",
+    "src/chatgpt-fix-launcher",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.97.1"
+publish = false
