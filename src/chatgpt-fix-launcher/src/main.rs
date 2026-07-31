@@ -94,7 +94,9 @@ fn render_dry_run(plan: &chatgpt_fix_core::PlanV1) -> Result<(String, String), S
         plan_sha256: sha256_bytes(plan_json.as_bytes()),
         artifact: None,
         artifact_sha256: None,
-        source_commit: "unrecorded".to_owned(),
+        source_commit: option_env!("CHATGPT_FIX_SOURCE_COMMIT")
+            .unwrap_or("unrecorded")
+            .to_owned(),
         toolchain: "rustc-1.97.1-x86_64-pc-windows-msvc".to_owned(),
         signing_status: "unsigned".to_owned(),
     };
