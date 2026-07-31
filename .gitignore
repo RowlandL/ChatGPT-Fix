@@ -13,3 +13,5 @@ desktop.ini
 raw-sessions/
 secrets/
 credentials/
+.squad/
+locks/*.receive.lock
