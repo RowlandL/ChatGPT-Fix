@@ -1,6 +1,18 @@
 use std::ffi::OsStr;
 use std::process::ExitCode;
 
+mod error;
+mod json;
+mod path;
+mod schema;
+
+pub use error::ContractError;
+pub use path::{SafeRelativePath, Sha256Digest};
+pub use schema::{
+    BASELINE_SCHEMA, BaselineV2, LAUNCH_SCHEMA, LaunchV1, PLAN_SCHEMA, PlanAction, PlanActionKind,
+    PlanDecision, PlanV1, RECEIPT_SCHEMA, ReceiptV1,
+};
+
 pub fn run_version_command(product_name: &str) -> ExitCode {
     let mut arguments = std::env::args_os().skip(1);
 
