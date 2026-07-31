@@ -40,7 +40,12 @@ fn assert_usage_error(command: &mut Command) {
     assert_eq!(output.status.code(), Some(2), "stderr: {:?}", output.stderr);
     assert!(output.stdout.is_empty(), "stdout: {:?}", output.stdout);
     assert_eq!(
-        output.stderr, b"Usage: ChatGPT-Fix-Packer --version\n",
+        output.stderr,
+        concat!(
+            "Usage: ChatGPT-Fix-Packer --version\n",
+            "       ChatGPT-Fix-Packer plan --fixture-root <path>\n",
+        )
+        .as_bytes(),
         "stderr: {:?}",
         output.stderr
     );
