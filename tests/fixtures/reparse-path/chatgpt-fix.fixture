@@ -1,0 +1,6 @@
+schema=chatgpt_fix.fixture.v1
+fixture_id=reparse-path
+root_kind=reparse
+manifest_state=valid
+available_bytes=1000000
+candidate=reparse-path|OpenAI.ChatGPT_26.721.4979.0_x64__8wekyb3d8bbwe|26.721.4979.0|x64|CN=OpenAI|payload/DO-NOT-READ.bin|4|edeaaff3f1774ad2888673770c6d64097e391bc362d7d6fb34982ddf0efd18cb

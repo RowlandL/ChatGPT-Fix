@@ -1,0 +1,6 @@
+schema=chatgpt_fix.fixture.v1
+fixture_id=unknown-publisher
+root_kind=directory
+manifest_state=valid
+available_bytes=1000000
+candidate=unknown-publisher|OpenAI.ChatGPT_26.721.4979.0_x64__unknown|26.721.4979.0|x64|CN=Unknown|payload/ChatGPT.exe|4|edeaaff3f1774ad2888673770c6d64097e391bc362d7d6fb34982ddf0efd18cb

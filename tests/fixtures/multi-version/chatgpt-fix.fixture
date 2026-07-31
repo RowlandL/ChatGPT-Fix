@@ -1,0 +1,8 @@
+# Candidate order is intentionally oldest to newest.
+schema=chatgpt_fix.fixture.v1
+fixture_id=multi-version
+root_kind=directory
+manifest_state=valid
+available_bytes=1000000
+candidate=chatgpt-26.707.8479.0|OpenAI.ChatGPT_26.707.8479.0_x64__8wekyb3d8bbwe|26.707.8479.0|x64|CN=OpenAI|payload/26.707.8479.0/ChatGPT.exe|12|a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447
+candidate=chatgpt-26.721.4979.0|OpenAI.ChatGPT_26.721.4979.0_x64__8wekyb3d8bbwe|26.721.4979.0|x64|CN=OpenAI|payload/26.721.4979.0/ChatGPT.exe|4|edeaaff3f1774ad2888673770c6d64097e391bc362d7d6fb34982ddf0efd18cb

@@ -1,0 +1,6 @@
+schema=chatgpt_fix.fixture.v1
+fixture_id=hash-mismatch
+root_kind=directory
+manifest_state=valid
+available_bytes=1000000
+candidate=hash-mismatch|OpenAI.ChatGPT_26.721.4979.0_x64__8wekyb3d8bbwe|26.721.4979.0|x64|CN=OpenAI|payload/ChatGPT.exe|4|0000000000000000000000000000000000000000000000000000000000000000

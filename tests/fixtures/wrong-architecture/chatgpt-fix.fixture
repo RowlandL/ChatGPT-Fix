@@ -1,0 +1,6 @@
+schema=chatgpt_fix.fixture.v1
+fixture_id=wrong-architecture
+root_kind=directory
+manifest_state=valid
+available_bytes=1000000
+candidate=wrong-architecture|OpenAI.ChatGPT_26.721.4979.0_x86__8wekyb3d8bbwe|26.721.4979.0|x86|CN=OpenAI|payload/ChatGPT.exe|4|edeaaff3f1774ad2888673770c6d64097e391bc362d7d6fb34982ddf0efd18cb
