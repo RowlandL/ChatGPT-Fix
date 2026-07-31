@@ -3,6 +3,7 @@ version=0.3.0
 target=x86_64-pc-windows-msvc
 profile=release
 source_commit=b32579a141ebc1fe97e4b4ba821e466ce839c305
+chatgpt_fix_source_commit=b32579a141ebc1fe97e4b4ba821e466ce839c305
 cargo_lock_sha256=ca9631f717ecd82f4a86c866a4976b3fe02cd76db00c421b830d9da957345f7c
 rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)
 cargo=cargo 1.97.1 (c980f4866 2026-06-30)

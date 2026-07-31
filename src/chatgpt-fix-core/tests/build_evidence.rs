@@ -44,6 +44,7 @@ fn tracked_build_evidence_is_exact_and_self_consistent() {
             "target=x86_64-pc-windows-msvc\n",
             "profile=release\n",
             "source_commit=b32579a141ebc1fe97e4b4ba821e466ce839c305\n",
+            "chatgpt_fix_source_commit=b32579a141ebc1fe97e4b4ba821e466ce839c305\n",
             "cargo_lock_sha256=ca9631f717ecd82f4a86c866a4976b3fe02cd76db00c421b830d9da957345f7c\n",
             "rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)\n",
             "cargo=cargo 1.97.1 (c980f4866 2026-06-30)\n",
