@@ -23,7 +23,7 @@ pub struct FixtureError {
 }
 
 impl FixtureError {
-    fn new(code: &'static str, path: impl Into<PathBuf>, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: &'static str, path: impl Into<PathBuf>, message: impl Into<String>) -> Self {
         Self {
             code: code.to_owned(),
             path: path.into(),

@@ -5,12 +5,14 @@ mod error;
 mod fixture;
 mod json;
 mod path;
+mod probe;
 mod schema;
 mod sha256;
 
 pub use error::ContractError;
 pub use fixture::{FIXTURE_SCHEMA, FixtureError, plan_fixture};
 pub use path::{SafeRelativePath, Sha256Digest};
+pub use probe::{inspect_probe_json, plan_from_probe, plan_probe_json};
 pub use schema::{
     BASELINE_SCHEMA, BaselineV2, LAUNCH_SCHEMA, LaunchV1, LIVE_INSPECTION_SCHEMA, LiveInspectionV1,
     PLAN_SCHEMA, PlanAction, PlanActionKind, PlanDecision, PlanV1, RECEIPT_SCHEMA, ReceiptV1,

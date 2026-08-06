@@ -10,7 +10,7 @@ fn prints_exact_version() {
         .expect("run chatgpt-fix-packer");
 
     assert_eq!(output.status.code(), Some(0), "stderr: {:?}", output.stderr);
-    assert_eq!(output.stdout, b"ChatGPT-Fix-Packer 0.3.0\n");
+    assert_eq!(output.stdout, b"ChatGPT-Fix-Packer 0.4.0\n");
     assert!(output.stderr.is_empty(), "stderr: {:?}", output.stderr);
 }
 
@@ -44,6 +44,10 @@ fn assert_usage_error(command: &mut Command) {
         concat!(
             "Usage: ChatGPT-Fix-Packer --version\n",
             "       ChatGPT-Fix-Packer plan --fixture-root <path>\n",
+            "       ChatGPT-Fix-Packer inspect --probe-json <path>\n",
+            "       ChatGPT-Fix-Packer plan --probe-json <path>\n",
+            "       ChatGPT-Fix-Packer inspect --live-readonly\n",
+            "       ChatGPT-Fix-Packer plan --live-readonly\n",
         )
         .as_bytes(),
         "stderr: {:?}",
