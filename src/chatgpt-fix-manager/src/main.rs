@@ -60,6 +60,12 @@ fn main() -> ExitCode {
         {
             run_maintenance_plan(Path::new(root))
         }
+        [command] if command == OsStr::new("ntc-health") => run_ntc_health(),
+        [command, option, root]
+            if command == OsStr::new("ntc-reapply") && option == OsStr::new("--fixture-root") =>
+        {
+            run_ntc_reapply(Path::new(root))
+        }
         [command] if command == OsStr::new("doctor") => {
             eprintln!("doctor v2 requires P6 authorization");
             ExitCode::from(2)
@@ -412,7 +418,171 @@ fn print_usage() {
     eprintln!("       {PRODUCT_NAME} config-apply --proposal <path> --canary <root>");
     eprintln!("       {PRODUCT_NAME} config-rollback --proposal <path>");
     eprintln!("       {PRODUCT_NAME} maintenance-plan --fixture-root <path>");
+    eprintln!("       {PRODUCT_NAME} ntc-health");
+    eprintln!("       {PRODUCT_NAME} ntc-reapply --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} doctor");
+}
+
+/// `ChatGPT-Fix-Manager ntc-health`.
+///
+/// Read-only native token-cost helper health check: probes the loopback
+/// health endpoint (127.0.0.1:17888) and the Scheduled Task state, emitting
+/// a `chatgpt_fix.ntc_health.v1` receipt. Never starts/stops the task.
+fn run_ntc_health() -> ExitCode {
+    match chatgpt_fix_core::ntc_health_check() {
+        Ok(health) => match health.to_json() {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("invalid ntc health: {error}");
+                ExitCode::from(3)
+            }
+        },
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(3)
+        }
+    }
+}
+
+/// `ChatGPT-Fix-Manager ntc-reapply --fixture-root <path>`.
+///
+/// Re-applies the native token-cost overlay to the app.asar COPY inside a
+/// launcher-owned baseline dir (never the official package). The fixture dir
+/// must contain `app.asar` and `ntc-overlay/userscript.js`. Emits a
+/// `chatgpt_fix.ntc_manifest.v1` with before/after hashes.
+fn run_ntc_reapply(root: &Path) -> ExitCode {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("scripts")
+        .join("inject-native-token-cost.js");
+    let in_asar = root.join("app.asar");
+    let userscript = root.join("ntc-overlay").join("codex-live-token-cost.js");
+    let out_asar = root.join("app.asar.ntc-new");
+
+    if !in_asar.is_file() {
+        eprintln!(
+            "ntc_reapply_failed: app.asar not found in {}",
+            root.display()
+        );
+        return ExitCode::from(3);
+    }
+    if !userscript.is_file() {
+        eprintln!(
+            "ntc_reapply_failed: ntc-overlay/codex-live-token-cost.js not found in {}",
+            root.display()
+        );
+        return ExitCode::from(3);
+    }
+    if !script.is_file() {
+        eprintln!(
+            "ntc_reapply_failed: inject script missing at {}",
+            script.display()
+        );
+        return ExitCode::from(4);
+    }
+
+    let node = std::env::var("CHATGPT_FIX_NODE").unwrap_or_else(|_| "node".to_owned());
+    let mut command = std::process::Command::new(&node);
+    // @electron/asar is resolved via NODE_PATH (the isolated node workspace);
+    // inherit the caller's NODE_PATH when set.
+    if let Ok(node_path) = std::env::var("NODE_PATH") {
+        command.env("NODE_PATH", node_path);
+    }
+    command
+        .arg(&script)
+        .arg(&in_asar)
+        .arg(&userscript)
+        .arg(&out_asar);
+    // Pass the unpacked natives dir (beside the asar) if present so the
+    // extraction can resolve native modules.
+    let unpacked_dir = root.join("app.asar.unpacked");
+    if unpacked_dir.is_dir() {
+        command.arg(&unpacked_dir);
+    }
+    let output = match command.output() {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!("ntc_reapply_failed: cannot run node: {error}");
+            return ExitCode::from(4);
+        }
+    };
+
+    if !output.status.success() {
+        eprintln!(
+            "ntc_reapply_failed: inject script exit {}: {}",
+            output.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+        return ExitCode::from(3);
+    }
+
+    // Parse the injection receipt (before/after hashes).
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = stdout.trim();
+    let (before, after) = match parse_ntc_receipt(trimmed) {
+        Some(v) => v,
+        None => {
+            eprintln!("ntc_reapply_failed: unexpected inject output: {trimmed}");
+            return ExitCode::from(3);
+        }
+    };
+
+    // Atomic swap: backup current, then replace the asar with the injected
+    // one. rename() can fail with "access denied" on Windows when the target
+    // is transiently locked; fall back to copy+remove.
+    let backup_path = root.join("app.asar.pre-ntc");
+    if in_asar.is_file()
+        && !backup_path.exists()
+        && let Err(error) = std::fs::copy(&in_asar, &backup_path)
+    {
+        eprintln!("ntc_reapply_failed: cannot back up app.asar: {error}");
+        return ExitCode::from(3);
+    }
+    let commit = match std::fs::rename(&out_asar, &in_asar) {
+        Ok(()) => true,
+        Err(rename_error) => {
+            match std::fs::copy(&out_asar, &in_asar).and_then(|_| std::fs::remove_file(&out_asar)) {
+                Ok(()) => true,
+                Err(copy_error) => {
+                    eprintln!(
+                        "ntc_reapply_failed: cannot commit injected app.asar (rename: {rename_error}; copy: {copy_error})"
+                    );
+                    return ExitCode::from(3);
+                }
+            }
+        }
+    };
+    let _ = commit;
+
+    // Emit manifest.
+    let manifest = chatgpt_fix_core::NtcManifestV1 {
+        artifact: "app.asar".to_owned(),
+        before_sha256: before,
+        after_sha256: after,
+        backup_ref: backup_path.to_string_lossy().replace('\\', "/"),
+        generation: 1,
+        reapply_state: chatgpt_fix_core::NtcReapplyState::Clean,
+        helper_health: "reapply-ok".to_owned(),
+        created_at_utc: chatgpt_fix_core::utc_now_rfc3339(),
+    };
+    match manifest.to_json() {
+        Ok(json) => {
+            println!("{json}");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("invalid ntc manifest: {error}");
+            ExitCode::from(3)
+        }
+    }
+}
+
+/// Extract before/after SHA-256 from the inject script JSON receipt.
+fn parse_ntc_receipt(output: &str) -> Option<(String, String)> {
+    use chatgpt_fix_core::json_parse_ntc_receipt;
+    json_parse_ntc_receipt(output)
 }
 
 /// `ChatGPT-Fix-Manager maintenance-plan --fixture-root <path>`.

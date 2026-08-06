@@ -8,6 +8,7 @@ mod fixture;
 mod generation;
 mod json;
 mod maintenance;
+mod ntc;
 mod ownership;
 mod path;
 mod probe;
@@ -24,6 +25,9 @@ pub use generation::{
     activate, launch_from_pointer, parse_shortcut_json, read_pointer, rollback, write_shortcut_json,
 };
 pub use maintenance::{generate_maintenance_plan, register_ntc_manifest};
+pub use ntc::{
+    NTC_HEALTH_SCHEMA, NtcHealthV1, json_parse_ntc_receipt, ntc_health_check, write_ntc_health,
+};
 pub use ownership::observe_process_tree;
 pub use path::{SafeRelativePath, Sha256Digest};
 pub use probe::{

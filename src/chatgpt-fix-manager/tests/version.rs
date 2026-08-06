@@ -51,6 +51,8 @@ fn assert_usage_error(command: &mut Command) {
             "       ChatGPT-Fix-Manager config-apply --proposal <path> --canary <root>\n",
             "       ChatGPT-Fix-Manager config-rollback --proposal <path>\n",
             "       ChatGPT-Fix-Manager maintenance-plan --fixture-root <path>\n",
+            "       ChatGPT-Fix-Manager ntc-health\n",
+            "       ChatGPT-Fix-Manager ntc-reapply --fixture-root <path>\n",
             "       ChatGPT-Fix-Manager doctor\n",
         )
         .as_bytes(),
