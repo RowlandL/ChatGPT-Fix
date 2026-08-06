@@ -214,29 +214,41 @@ fn complete_one_click_config(root: &Path, launcher: &Path) -> bool {
         .unwrap_or_default();
 
     let ps = format!(
-        "$s1 = (New-Object -ComObject WScript.Shell).CreateShortcut('{}'); $s1.TargetPath = 'C:\\Windows\\explorer.exe'; $s1.Arguments = '{}'; $s1.WorkingDirectory = 'C:\\Windows'; $s1.Description = 'ChatGPT (official)'; $s1.Save(); $s2 = (New-Object -ComObject WScript.Shell).CreateShortcut('{}'); $s2.TargetPath = '{}'; $s2.WorkingDirectory = '{}'; $s2.Description = 'ChatGPT-Fix-Launcher (wrapper)'; $s2.IconLocation = '{}'; $s2.Save();",
+        "$sh = New-Object -ComObject WScript.Shell; try {{ $s1 = $sh.CreateShortcut('{}'); $s1.TargetPath = 'C:\\Windows\\explorer.exe'; $s1.Arguments = '{}'; $s1.WorkingDirectory = 'C:\\Windows'; $s1.Description = 'ChatGPT (official)'; $s1.IconLocation = '{}'; $s1.Save(); if (-not (Test-Path -LiteralPath '{}')) {{ throw 'ChatGPT.lnk not created' }} }} catch {{ Write-Error $_; exit 1 }}; try {{ $s2 = $sh.CreateShortcut('{}'); $s2.TargetPath = '{}'; $s2.WorkingDirectory = '{}'; $s2.Description = 'ChatGPT-Fix-Launcher (wrapper)'; $s2.IconLocation = '{}'; $s2.Save(); if (-not (Test-Path -LiteralPath '{}')) {{ throw 'Launcher.lnk not created' }} }} catch {{ Write-Error $_; exit 1 }}",
         lnk_chatgpt.to_string_lossy().replace('\'', "''"),
         AUMID.replace('\'', "''"),
+        official_icon.replace('\'', "''"),
+        lnk_chatgpt.to_string_lossy().replace('\'', "''"),
         lnk_launcher.to_string_lossy().replace('\'', "''"),
         shortcut_target.replace('\'', "''"),
         work_dir.replace('\'', "''"),
         official_icon.replace('\'', "''"),
+        lnk_launcher.to_string_lossy().replace('\'', "''"),
     );
-    if let Ok(output) = std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
-        .output()
-    {
-        if output.status.success() {
-            ok = ok && true;
-        } else {
-            eprintln!(
-                "setup_warn: shortcut creation failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
-            ok = false;
+    // Run, and on failure retry once (transient locks from a still-running
+    // app can prevent Save); only then report failure.
+    let mut created_ok = false;
+    for attempt in 0..2 {
+        if let Ok(output) = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
+            .output()
+        {
+            if output.status.success() && lnk_chatgpt.exists() && lnk_launcher.exists() {
+                created_ok = true;
+                break;
+            }
+            if attempt == 1 {
+                eprintln!(
+                    "setup_warn: shortcut creation failed after retry: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                );
+            }
+        } else if attempt == 1 {
+            eprintln!("setup_warn: cannot run powershell for shortcut creation");
         }
-    } else {
-        eprintln!("setup_warn: cannot run powershell for shortcut creation");
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    if !created_ok {
         ok = false;
     }
 

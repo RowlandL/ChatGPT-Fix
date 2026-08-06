@@ -502,6 +502,45 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<LaunchV1, ContractErro
         ));
     }
 
+    // Single-instance guard: if a ChatGPT.exe process is already running,
+    // do NOT spawn another copy (multiple Electron stacks make startup slow
+    // and waste memory). Reuse the running instance instead.
+    if chatgpt_process_running() {
+        let launch = LaunchV1 {
+            launch_id: format!(
+                "live-{}",
+                crate::utc_now_rfc3339()
+                    .replace([':', '-'], "")
+                    .replace('T', "-")
+            ),
+            generation: 1,
+            baseline_id: SafeRelativePath::parse(
+                baseline
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .as_ref(),
+            )
+            .unwrap_or_else(|_| SafeRelativePath::parse("baseline").expect("static safe path")),
+            executable: SafeRelativePath::parse(
+                executable
+                    .strip_prefix(baseline)
+                    .unwrap_or(&executable)
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .as_str(),
+            )
+            .map_err(|error| contract_error("invalid_value", "executable", format!("{error}")))?,
+            would_start: true,
+            reason: None,
+        };
+        // Mark the launch receipt with a note via the launch_id? No — keep
+        // the receipt valid; the caller sees the same shape. The running
+        // instance is reused, nothing is spawned.
+        launch.validate()?;
+        return Ok(launch);
+    }
+
     // Launch detached: the launcher does not wait for the app to exit.
     // Dropping the Child handle detaches it — the process keeps running
     // independently (on Windows, dropping without wait leaves the child
@@ -549,4 +588,25 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<LaunchV1, ContractErro
     };
     launch.validate()?;
     Ok(launch)
+}
+
+/// Returns true when at least one ChatGPT.exe process is already running
+/// (single-instance guard). Uses `tasklist` with a GBK-safe byte check so
+/// the locale of the output never matters.
+fn chatgpt_process_running() -> bool {
+    use std::process::Command;
+    let output = match Command::new("tasklist")
+        .args(["/FI", "IMAGENAME eq ChatGPT.exe", "/FO", "CSV", "/NH"])
+        .output()
+    {
+        Ok(output) => output,
+        Err(_) => return false, // tasklist unavailable: fail open to spawn
+    };
+    if !output.status.success() {
+        return false;
+    }
+    // Case-insensitive scan for the image name token in the raw bytes.
+    let hay = output.stdout.to_ascii_lowercase();
+    hay.windows(b"chatgpt.exe".len())
+        .any(|w| w == b"chatgpt.exe")
 }
