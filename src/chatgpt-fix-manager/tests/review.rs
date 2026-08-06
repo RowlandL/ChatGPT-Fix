@@ -122,6 +122,8 @@ fn rejects_live_style_arguments_before_path_access() {
             "Usage: ChatGPT-Fix-Manager --version\n",
             "       ChatGPT-Fix-Manager review --fixture-root <path>\n",
             "       ChatGPT-Fix-Manager review --plan-stdin\n",
+            "       ChatGPT-Fix-Manager activate --baseline <root> [--smoke]\n",
+            "       ChatGPT-Fix-Manager rollback\n",
             "       ChatGPT-Fix-Manager doctor\n",
         )
         .as_bytes()
@@ -129,7 +131,7 @@ fn rejects_live_style_arguments_before_path_access() {
 }
 
 #[test]
-fn doctor_requires_p3_authorization() {
+fn doctor_requires_p6_authorization() {
     let output = Command::new(BINARY)
         .args(["doctor"])
         .output()
@@ -137,7 +139,7 @@ fn doctor_requires_p3_authorization() {
 
     assert_eq!(output.status.code(), Some(2), "stderr: {:?}", output.stderr);
     assert!(output.stdout.is_empty());
-    assert_eq!(output.stderr, b"doctor v2 requires P3 authorization\n");
+    assert_eq!(output.stderr, b"doctor v2 requires P6 authorization\n");
 }
 
 #[test]

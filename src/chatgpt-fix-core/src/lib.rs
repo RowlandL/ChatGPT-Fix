@@ -4,6 +4,7 @@ use std::process::ExitCode;
 mod doctor;
 mod error;
 mod fixture;
+mod generation;
 mod json;
 mod path;
 mod probe;
@@ -14,15 +15,17 @@ mod staging;
 pub use doctor::{DOCTOR_SCHEMA, DoctorFinding, DoctorLevel, DoctorStatus, DoctorV2};
 pub use error::ContractError;
 pub use fixture::{FIXTURE_SCHEMA, FixtureError, plan_fixture};
+pub use generation::{activate, parse_shortcut_json, read_pointer, rollback, write_shortcut_json};
 pub use path::{SafeRelativePath, Sha256Digest};
 pub use probe::{
     A2_P2_ENV, inspect_live_json, inspect_probe_json, plan_from_probe, plan_live_json,
     plan_probe_json,
 };
 pub use schema::{
-    BASELINE_SCHEMA, BaselineV2, LAUNCH_SCHEMA, LIVE_INSPECTION_SCHEMA, LaunchV1, LiveInspectionV1,
-    PLAN_SCHEMA, PlanAction, PlanActionKind, PlanDecision, PlanV1, RECEIPT_SCHEMA, ReceiptV1,
-    STAGING_SCHEMA, StagingFileEntry, StagingState, StagingV1,
+    BASELINE_SCHEMA, BaselineV2, GENERATION_SCHEMA, GenerationState, GenerationV1, LAUNCH_SCHEMA,
+    LIVE_INSPECTION_SCHEMA, LaunchV1, LiveInspectionV1, PLAN_SCHEMA, PlanAction, PlanActionKind,
+    PlanDecision, PlanV1, RECEIPT_SCHEMA, ReceiptV1, STAGING_SCHEMA, ShortcutBackup,
+    StagingFileEntry, StagingState, StagingV1,
 };
 pub use sha256::sha256_bytes;
 pub use staging::{read_staging_state, stage_from_probe, verify_staging};

@@ -10,6 +10,46 @@ pub const LAUNCH_SCHEMA: &str = "chatgpt_fix.launch.v1";
 pub const RECEIPT_SCHEMA: &str = "chatgpt_fix.receipt.v1";
 pub const LIVE_INSPECTION_SCHEMA: &str = "chatgpt_fix.live_inspection.v1";
 pub const STAGING_SCHEMA: &str = "chatgpt_fix.staging.v1";
+pub const GENERATION_SCHEMA: &str = "chatgpt_fix.generation.v1";
+
+/// The generation state machine for the pointer/shortcut transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum GenerationState {
+    Prepared,
+    Activated,
+    RolledBack,
+    SmokeStarted,
+    SmokeObserved,
+}
+
+impl GenerationState {
+    fn as_json_str(self) -> &'static str {
+        match self {
+            Self::Prepared => "prepared",
+            Self::Activated => "activated",
+            Self::RolledBack => "rolled_back",
+            Self::SmokeStarted => "smoke_started",
+            Self::SmokeObserved => "smoke_observed",
+        }
+    }
+
+    fn from_json_str(s: &str) -> Result<Self, ContractError> {
+        match s {
+            "prepared" => Ok(Self::Prepared),
+            "activated" => Ok(Self::Activated),
+            "rolled_back" => Ok(Self::RolledBack),
+            "smoke_started" => Ok(Self::SmokeStarted),
+            "smoke_observed" => Ok(Self::SmokeObserved),
+            other => Err(ContractError::new(
+                "invalid_value",
+                "state",
+                format!(
+                    "expected 'prepared', 'activated', 'rolled_back', 'smoke_started', or 'smoke_observed', got '{other}'"
+                ),
+            )),
+        }
+    }
+}
 
 /// The staging state machine: staged -> verified, or quarantined on failure.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -969,5 +1009,143 @@ impl StagingV1 {
         };
         staging.validate()?;
         Ok(staging)
+    }
+}
+
+/// A snapshot of the ChatGPT.lnk COM properties that P4 backs up and
+/// restores exactly on rollback.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ShortcutBackup {
+    pub target_path: String,
+    pub arguments: String,
+    pub working_directory: String,
+    pub icon_location: String,
+}
+
+impl ShortcutBackup {
+    pub fn write_json(&self, output: &mut String) {
+        output.push_str("{\"target_path\":");
+        write_string(output, &self.target_path);
+        output.push_str(",\"arguments\":");
+        write_string(output, &self.arguments);
+        output.push_str(",\"working_directory\":");
+        write_string(output, &self.working_directory);
+        output.push_str(",\"icon_location\":");
+        write_string(output, &self.icon_location);
+        output.push('}');
+    }
+}
+
+/// The generation transaction receipt (`chatgpt_fix.generation.v1`).
+///
+/// Produced by `ChatGPT-Fix-Manager activate --baseline <root> [--smoke]`
+/// and consumed by `rollback`. The pointer switch and shortcut backup are
+/// atomic and fully reversible; a smoke run only observes, never kills.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GenerationV1 {
+    pub generation_id: String,
+    pub baseline_root: String,
+    pub pointer_path: String,
+    pub shortcut_backup: ShortcutBackup,
+    pub launch_ledger: String,
+    pub state: GenerationState,
+    pub created_at_utc: String,
+}
+
+impl GenerationV1 {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        validate_text("generation_id", &self.generation_id)?;
+        validate_text("baseline_root", &self.baseline_root)?;
+        validate_text("pointer_path", &self.pointer_path)?;
+        validate_text("launch_ledger", &self.launch_ledger)?;
+        validate_text("created_at_utc", &self.created_at_utc)?;
+        if self.shortcut_backup.target_path.is_empty() {
+            return Err(ContractError::new(
+                "empty_field",
+                "shortcut_backup.target_path",
+                "must not be empty",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> Result<String, ContractError> {
+        let mut output = String::new();
+        output.push_str("{\"schema\":");
+        write_string(&mut output, GENERATION_SCHEMA);
+        output.push_str(",\"generation_id\":");
+        write_string(&mut output, &self.generation_id);
+        output.push_str(",\"baseline_root\":");
+        write_string(&mut output, &self.baseline_root);
+        output.push_str(",\"pointer_path\":");
+        write_string(&mut output, &self.pointer_path);
+        output.push_str(",\"shortcut_backup\":");
+        self.shortcut_backup.write_json(&mut output);
+        output.push_str(",\"launch_ledger\":");
+        write_string(&mut output, &self.launch_ledger);
+        output.push_str(",\"state\":");
+        write_string(&mut output, self.state.as_json_str());
+        output.push_str(",\"created_at_utc\":");
+        write_string(&mut output, &self.created_at_utc);
+        output.push('}');
+        Ok(output)
+    }
+
+    pub fn from_json(json: &[u8]) -> Result<Self, ContractError> {
+        let parsed = JsonParser::new(json)?.parse_top_level()?;
+        let _obj = parsed.as_object()?;
+
+        let schema = parsed.field("schema")?.as_str()?;
+        if schema != GENERATION_SCHEMA {
+            return Err(ContractError::new(
+                "schema_mismatch",
+                "schema",
+                format!("expected {}, got {}", GENERATION_SCHEMA, schema),
+            ));
+        }
+
+        let get_str = |key: &str| -> Result<String, ContractError> {
+            Ok(parsed.field(key)?.as_str()?.to_owned())
+        };
+
+        let generation_id = get_str("generation_id")?;
+        let baseline_root = get_str("baseline_root")?;
+        let pointer_path = get_str("pointer_path")?;
+        let launch_ledger = get_str("launch_ledger")?;
+        let state = GenerationState::from_json_str(get_str("state")?.as_str())?;
+        let created_at_utc = get_str("created_at_utc")?;
+
+        let shortcut_value = parsed.field("shortcut_backup")?;
+        let target_path = shortcut_value.field("target_path")?.as_str()?.to_owned();
+        let arguments = shortcut_value.field("arguments")?.as_str()?.to_owned();
+        let working_directory = shortcut_value
+            .field("working_directory")?
+            .as_str()?
+            .to_owned();
+        let icon_location = shortcut_value.field("icon_location")?.as_str()?.to_owned();
+        let shortcut_backup = ShortcutBackup {
+            target_path,
+            arguments,
+            working_directory,
+            icon_location,
+        };
+
+        let generation = GenerationV1 {
+            generation_id,
+            baseline_root,
+            pointer_path,
+            shortcut_backup,
+            launch_ledger,
+            state,
+            created_at_utc,
+        };
+        generation.validate().map_err(|error| {
+            ContractError::new(
+                "generation_validation_failed",
+                "generation",
+                format!("generation validation failed: {error}"),
+            )
+        })?;
+        Ok(generation)
     }
 }
