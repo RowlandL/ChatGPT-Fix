@@ -204,25 +204,31 @@ fn complete_one_click_config(root: &Path, launcher: &Path) -> bool {
     // Official package family name for the AUMID launch. The publisher id is
     // stable across package versions, so the AUMID survives updates.
     const AUMID: &str = "shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App";
-    // Icon: the official package exe (embedded icon); if the current version
-    // path is gone (package updated), fall back to no icon (default).
-    let official_icon = app_root
-        .as_deref()
-        .map(|p| Path::new(p).join("app").join("ChatGPT.exe"))
-        .filter(|p| p.is_file())
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    // Icon: prefer the version-independent LOCAL ico (chatgpt-icon.ico) so a
+    // package update never breaks the shortcut icon. Fall back to the
+    // official package exe (embedded icon) only when the local ico is absent.
+    let local_icon = root.join("chatgpt-icon.ico");
+    let icon_path = if local_icon.is_file() {
+        local_icon.to_string_lossy().into_owned()
+    } else {
+        app_root
+            .as_deref()
+            .map(|p| Path::new(p).join("app").join("ChatGPT.exe"))
+            .filter(|p| p.is_file())
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
 
     let ps = format!(
         "$sh = New-Object -ComObject WScript.Shell; try {{ $s1 = $sh.CreateShortcut('{}'); $s1.TargetPath = 'C:\\Windows\\explorer.exe'; $s1.Arguments = '{}'; $s1.WorkingDirectory = 'C:\\Windows'; $s1.Description = 'ChatGPT (official)'; $s1.IconLocation = '{}'; $s1.Save(); if (-not (Test-Path -LiteralPath '{}')) {{ throw 'ChatGPT.lnk not created' }} }} catch {{ Write-Error $_; exit 1 }}; try {{ $s2 = $sh.CreateShortcut('{}'); $s2.TargetPath = '{}'; $s2.WorkingDirectory = '{}'; $s2.Description = 'ChatGPT-Fix-Launcher (wrapper)'; $s2.IconLocation = '{}'; $s2.Save(); if (-not (Test-Path -LiteralPath '{}')) {{ throw 'Launcher.lnk not created' }} }} catch {{ Write-Error $_; exit 1 }}",
         lnk_chatgpt.to_string_lossy().replace('\'', "''"),
         AUMID.replace('\'', "''"),
-        official_icon.replace('\'', "''"),
+        icon_path.replace('\'', "''"),
         lnk_chatgpt.to_string_lossy().replace('\'', "''"),
         lnk_launcher.to_string_lossy().replace('\'', "''"),
         shortcut_target.replace('\'', "''"),
         work_dir.replace('\'', "''"),
-        official_icon.replace('\'', "''"),
+        icon_path.replace('\'', "''"),
         lnk_launcher.to_string_lossy().replace('\'', "''"),
     );
     // Run, and on failure retry once (transient locks from a still-running
