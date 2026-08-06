@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::Write as IoWrite;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::json::write_string;
 use crate::{
@@ -16,6 +16,21 @@ const LAUNCH_LEDGER_FILE: &str = "launch-ledger.json";
 
 fn contract_error(code: &'static str, field: &str, message: impl Into<String>) -> ContractError {
     ContractError::new(code, field, message)
+}
+
+/// A short random hex suffix for generation IDs so two activations in the
+/// same second never collide. Uses `std::time::SystemTime` nanoseconds XOR
+/// process ID as entropy (no external RNG dependency).
+fn random_hex_suffix() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    format!(
+        "{:06x}",
+        (nanos ^ (pid as u32)).wrapping_mul(0x9e3779b1) & 0xFFFFFF
+    )
 }
 
 /// Validate that `baseline_root` is an A3-verified immutable baseline
@@ -156,9 +171,15 @@ pub fn activate(
 ) -> Result<GenerationV1, ContractError> {
     require_verified_baseline(baseline_root)?;
 
-    let generation_id = crate::utc_now_rfc3339()
-        .replace([':', '-'], "")
-        .replace('T', "-");
+    // Include a random suffix so two activations in the same second never
+    // collide on the same backup directory.
+    let generation_id = format!(
+        "{}-{}",
+        crate::utc_now_rfc3339()
+            .replace([':', '-'], "")
+            .replace('T', "-"),
+        random_hex_suffix()
+    );
     let backup_dir = program_root.join("backups").join(&generation_id);
     fs::create_dir_all(&backup_dir).map_err(|error| {
         contract_error(
@@ -172,10 +193,6 @@ pub fn activate(
     let launch_ledger_path = backup_dir.join(LAUNCH_LEDGER_FILE);
     // Persist an empty launch ledger now; smoke writes entries later.
     write_launch_ledger(&launch_ledger_path, "")?;
-
-    // Atomically switch the pointer (backup preserved in backup dir).
-    let pointer_json = pointer_json(baseline_root);
-    atomic_write_pointer(&pointer_path, &pointer_json)?;
 
     let state = if smoke {
         GenerationState::SmokeStarted
@@ -191,8 +208,15 @@ pub fn activate(
         state,
         created_at_utc: crate::utc_now_rfc3339(),
     };
+    // Write the receipt FIRST so the pointer switch is the single commit
+    // point: a crash after this point leaves a complete, roll-back-able
+    // generation record.
     generation.validate()?;
     write_generation_receipt(&backup_dir, &generation)?;
+
+    // Atomically switch the pointer (backup preserved in backup dir).
+    let pointer_json = pointer_json(baseline_root);
+    atomic_write_pointer(&pointer_path, &pointer_json)?;
     Ok(generation)
 }
 
@@ -255,7 +279,10 @@ pub fn rollback(program_root: &Path) -> Result<GenerationV1, ContractError> {
     })?;
     let mut generation = GenerationV1::from_json(&bytes)?;
 
-    let pointer_path = PathBuf::from(generation.pointer_path.clone());
+    // The pointer path in the receipt is informational; the actual pointer
+    // must always be the program-root current.json. A tampered receipt
+    // cannot redirect the rollback write.
+    let pointer_path = program_root.join(POINTER_FILE);
     // Roll back to a null pointer (no baseline active).
     atomic_write_pointer(
         &pointer_path,

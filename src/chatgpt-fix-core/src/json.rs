@@ -135,11 +135,33 @@ impl<'a> JsonParser<'a> {
                         "unescaped control character in string",
                     ));
                 }
-                b => {
-                    // UTF-8 multi-byte: we already validated the input is
-                    // valid UTF-8 at parse time, so just push the char.
-                    let ch = char::from(b);
-                    result.push(ch);
+                first if first < 0x80 => {
+                    // Single-byte ASCII.
+                    result.push(first as char);
+                }
+                first => {
+                    // Multi-byte UTF-8: collect the continuation bytes and
+                    // decode as a proper UTF-8 sequence.
+                    let extra = match first {
+                        0xC0..=0xDF => 1,
+                        0xE0..=0xEF => 2,
+                        0xF0..=0xF7 => 3,
+                        _ => {
+                            return Err(json_error("json_utf8", "invalid UTF-8 start byte"));
+                        }
+                    };
+                    let mut bytes = vec![first];
+                    for _ in 0..extra {
+                        self.require_not_eof("unexpected end of UTF-8 sequence")?;
+                        let b = self.read_byte();
+                        if !(0x80..=0xBF).contains(&b) {
+                            return Err(json_error("json_utf8", "invalid UTF-8 continuation byte"));
+                        }
+                        bytes.push(b);
+                    }
+                    let s = std::str::from_utf8(&bytes)
+                        .map_err(|_| json_error("json_utf8", "invalid UTF-8 sequence"))?;
+                    result.push_str(s);
                 }
             }
         }
@@ -863,5 +885,40 @@ mod tests {
         let big = vec![b' '; MAX_LENGTH + 1];
         let err = JsonParser::new(&big).unwrap_err();
         assert_eq!(err.code, "json_length");
+    }
+
+    #[test]
+    fn parse_multibyte_utf8_strings_exactly() {
+        // Regression: multi-byte UTF-8 must decode as the original
+        // characters, not be split byte-by-byte into Latin-1 lookalikes.
+        let json = "{\"target\":\"可持续监控\"}".as_bytes();
+        let parsed = JsonParser::new(json).unwrap().parse_top_level().unwrap();
+        let _obj = parsed.as_object().unwrap();
+        assert_eq!(
+            parsed.field("target").unwrap().as_str().unwrap(),
+            "可持续监控"
+        );
+    }
+
+    #[test]
+    fn reject_invalid_utf8_start_byte() {
+        // A raw 0xFF inside a string is not a valid UTF-8 lead byte.
+        let json = b"{\"a\":\"\xff\"}";
+        let err = JsonParser::new(json)
+            .unwrap()
+            .parse_top_level()
+            .unwrap_err();
+        assert_eq!(err.code, "json_utf8");
+    }
+
+    #[test]
+    fn reject_truncated_utf8_sequence() {
+        // A lone continuation byte (0x80) without a lead byte is invalid.
+        let json = b"{\"a\":\"\x80\"}";
+        let err = JsonParser::new(json)
+            .unwrap()
+            .parse_top_level()
+            .unwrap_err();
+        assert_eq!(err.code, "json_utf8");
     }
 }

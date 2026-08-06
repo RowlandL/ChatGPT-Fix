@@ -157,3 +157,35 @@ fn parse_proposal_rejects_wrong_schema() {
     .expect_err("wrong schema must fail");
     assert_eq!(err.code, "schema_mismatch");
 }
+
+#[test]
+fn apply_rejects_path_traversal_proposal_id() {
+    // Regression: proposal_id must be a safe single path component; a forged
+    // proposal with `../../` must not escape the canary root.
+    let fixture = fixture_root("mcp");
+    let canary = temp_canary("traversal");
+    fs::create_dir_all(&canary).expect("create canary");
+
+    let mut proposal =
+        config_plan(&fixture, ConfigScope::Mcp, "backups/traversal-1").expect("plan must succeed");
+    proposal.proposal_id = "../../somewhere".to_owned();
+    let err = config_apply(&fixture, &canary, &proposal).expect_err("traversal must fail");
+    assert_eq!(err.code, "invalid_value");
+    assert_eq!(err.field, "proposal_id");
+    assert!(!canary.join("mcp.json").exists());
+}
+
+#[test]
+fn rollback_rejects_path_traversal_proposal_id() {
+    let fixture = fixture_root("mcp");
+    let canary = temp_canary("traversal-rollback");
+    fs::create_dir_all(&canary).expect("create canary");
+
+    let proposal = config_plan(&fixture, ConfigScope::Mcp, "backups/traversal-rollback-1")
+        .expect("plan must succeed");
+    let mut applied = config_apply(&fixture, &canary, &proposal).expect("apply must succeed");
+    applied.proposal_id = "..\\..\\escape".to_owned();
+    let err = config_rollback(&canary, &applied).expect_err("traversal rollback must fail");
+    assert_eq!(err.code, "invalid_value");
+    assert_eq!(err.field, "proposal_id");
+}

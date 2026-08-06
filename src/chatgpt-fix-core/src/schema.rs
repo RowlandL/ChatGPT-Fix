@@ -564,7 +564,7 @@ impl LiveInspectionV1 {
             }
         };
 
-        Ok(Self {
+        let inspection = Self {
             probe_source: get_str("probe_source")?,
             package_full_name: get_str("package_full_name")?,
             version: get_str("version")?,
@@ -588,7 +588,9 @@ impl LiveInspectionV1 {
             codex_home_inspected: get_bool("codex_home_inspected")?,
             local_state_inspected: get_bool("local_state_inspected")?,
             processes_inspected: get_bool("processes_inspected")?,
-        })
+        };
+        inspection.validate()?;
+        Ok(inspection)
     }
 }
 

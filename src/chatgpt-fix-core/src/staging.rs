@@ -55,12 +55,25 @@ fn read_inspection(probe_json_path: &Path) -> Result<LiveInspectionV1, ContractE
     })?;
 
     // P3 refuses live WindowsApps package roots; only fixture/staging
-    // directories may be staged.
+    // directories may be staged. Normalize the path (lower-case + forward
+    // slashes) before checking so that case variations and forward slashes
+    // cannot bypass the check. When the path exists, canonicalize first so
+    // 8.3 short names are also resolved; if canonicalization fails the raw
+    // path check still applies (a live root that cannot be read must not be
+    // staged either way).
     let install = Path::new(&inspection.install_location);
-    if install
-        .to_string_lossy()
-        .contains("Program Files\\WindowsApps")
-    {
+    let raw_normalized = inspection
+        .install_location
+        .to_lowercase()
+        .replace('\\', "/");
+    let normalized = match fs::canonicalize(install) {
+        Ok(canonical) => canonical
+            .to_string_lossy()
+            .to_lowercase()
+            .replace('\\', "/"),
+        Err(_) => raw_normalized.clone(),
+    };
+    if normalized.contains("program files/windowsapps") {
         return Err(contract_error(
             "live_package_refused",
             "install_location",

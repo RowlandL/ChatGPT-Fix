@@ -148,6 +148,12 @@ pub fn shutdown_process_tree(fixture_root: &Path) -> Result<ShutdownV1, Contract
                 "must not be empty",
             ));
         }
+        // PID reuse is checked FIRST: an ambiguous PID is always suspected,
+        // never excluded or handled — regardless of breakaway/in_job flags.
+        if pid_reuse.contains(&entry.pid) {
+            suspected_pids.push(entry.pid);
+            continue;
+        }
         // Handle-inheritance negative case: a process that inherited the
         // launcher's stdout/stderr handles (`handle_inherited`) is external
         // whenever it is not a Job member — inherited handles alone never
@@ -158,9 +164,9 @@ pub fn shutdown_process_tree(fixture_root: &Path) -> Result<ShutdownV1, Contract
             // Proven not owned (breakaway, outside the Job, or a
             // handle-inheriting external). Never handled.
             excluded_pids.push(entry.pid);
-        } else if !reconciled || pid_reuse.contains(&entry.pid) {
-            // Ownership cannot be proven: ledger reconciliation failed or the
-            // PID is ambiguous. Fail closed.
+        } else if !reconciled {
+            // Ownership cannot be proven: ledger reconciliation failed.
+            // Fail closed.
             suspected_pids.push(entry.pid);
         } else {
             // Explicitly owned, in the Job, reconciled, unambiguous.
@@ -199,13 +205,26 @@ pub fn shutdown_process_tree(fixture_root: &Path) -> Result<ShutdownV1, Contract
                 ShutdownState::Closed
             } else {
                 // The owned root must be part of the handled set; if the
-                // fixture contradicts that, fail closed.
+                // fixture contradicts that, fail closed. Record the root as
+                // suspected so the receipt carries the ambiguity.
+                if !suspected_pids.contains(&(root_pid as u64)) {
+                    suspected_pids.push(root_pid as u64);
+                }
                 ShutdownState::Failed
             }
         }
         ShutdownMode::JobClose => {
-            // Job close: closing the Job terminates every owned member at once.
-            ShutdownState::Closed
+            // Job close: closing the Job terminates every owned member at
+            // once, but the owned root must still be part of the handled
+            // set; if the fixture contradicts that, fail closed.
+            if handled_pids.contains(&(root_pid as u64)) {
+                ShutdownState::Closed
+            } else {
+                if !suspected_pids.contains(&(root_pid as u64)) {
+                    suspected_pids.push(root_pid as u64);
+                }
+                ShutdownState::Failed
+            }
         }
     };
 
@@ -215,7 +234,7 @@ pub fn shutdown_process_tree(fixture_root: &Path) -> Result<ShutdownV1, Contract
         shutdown_mode: mode,
         handled_pids,
         excluded_pids,
-        suspected_pids: Vec::new(),
+        suspected_pids,
         state,
         created_at_utc: crate::utc_now_rfc3339(),
     };

@@ -674,6 +674,33 @@ fn live_inspection_json_roundtrip() {
 }
 
 #[test]
+fn live_inspection_from_json_rejects_inspected_flags() {
+    // Regression: from_json must call validate() so a forged probe report
+    // that claims codex_home/local_state/processes was inspected is rejected
+    // (P2 read-only boundary, fail closed).
+    let mut v = inspection();
+    v.codex_home_inspected = true;
+    let json = v.to_json().unwrap();
+    let err = LiveInspectionV1::from_json(json.as_bytes()).unwrap_err();
+    assert_eq!(err.code, "invariant_violation");
+    assert_eq!(err.field, "codex_home_inspected");
+
+    let mut v = inspection();
+    v.local_state_inspected = true;
+    let json = v.to_json().unwrap();
+    let err = LiveInspectionV1::from_json(json.as_bytes()).unwrap_err();
+    assert_eq!(err.code, "invariant_violation");
+    assert_eq!(err.field, "local_state_inspected");
+
+    let mut v = inspection();
+    v.processes_inspected = true;
+    let json = v.to_json().unwrap();
+    let err = LiveInspectionV1::from_json(json.as_bytes()).unwrap_err();
+    assert_eq!(err.code, "invariant_violation");
+    assert_eq!(err.field, "processes_inspected");
+}
+
+#[test]
 fn live_inspection_json_is_exact_compact() {
     let json = inspection().to_json().unwrap();
     assert!(json.starts_with("{\"schema\":\"chatgpt_fix.live_inspection.v1\""));

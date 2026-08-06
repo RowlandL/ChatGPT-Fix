@@ -1,0 +1,1 @@
+{"schema": "chatgpt_fix.process_tree.v1", "launch_id": "fixture-shutdown-pidreuse-excluded", "root_pid": 2300, "shutdown_mode": "graceful", "processes": [{"pid": 2300, "name": "ChatGPT.exe", "in_job": true, "breakaway": false}, {"pid": 2301, "name": "uv.exe", "in_job": true, "breakaway": false}, {"pid": 2301, "name": "node.exe", "in_job": false, "breakaway": true}]}

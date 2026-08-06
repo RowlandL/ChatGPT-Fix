@@ -137,6 +137,33 @@ fn stage_refuses_live_windowsapps_path() {
 }
 
 #[test]
+fn stage_refuses_case_and_slash_variant_of_windowsapps() {
+    // Regression: the live-WindowsApps check must survive case and forward
+    // slash variations of the path (e.g. `C:/PROGRAM FILES/WindowsApps/...`).
+    let probe_path = staging_dir("live-case").join("probe.json");
+    fs::create_dir_all(probe_path.parent().expect("probe has parent"))
+        .expect("create probe directory");
+    let source = fs::read_to_string(fixture_probe()).expect("read fixture probe");
+    let live_root = "c:/program files/windowsapps/OpenAI.Codex_9.9.9.0_x64__2p2nqsd0c76g0";
+    let marker = "\"install_location\": \"";
+    let start = source.find(marker).expect("install_location present");
+    let after = &source[start + marker.len()..];
+    let end = after.find('"').expect("install_location value terminates");
+    let live_probe = format!(
+        "{}{}{}{}",
+        &source[..start],
+        marker,
+        live_root,
+        &after[end..]
+    );
+    fs::write(&probe_path, live_probe).expect("write live probe");
+
+    let out = staging_dir("live-case-out");
+    let err = stage_from_probe(&probe_path, &out).expect_err("live package must be refused");
+    assert_eq!(err.code, "live_package_refused");
+}
+
+#[test]
 fn staging_state_roundtrips_through_schema() {
     let out = staging_dir("roundtrip");
     let staging = stage_from_probe(&fixture_probe(), &out).expect("stage must succeed");

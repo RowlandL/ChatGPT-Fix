@@ -79,6 +79,36 @@ fn pid_reuse_fails_closed() {
 }
 
 #[test]
+fn pid_reuse_with_excluded_flags_still_fails_closed() {
+    // Regression: a duplicated PID that also carries breakaway=true or
+    // in_job=false must still be suspected (fail closed), never excluded
+    // silently. The conditional order must check pid_reuse FIRST.
+    let shutdown = shutdown_process_tree(&fixture_root().join("pid-reuse-excluded"))
+        .expect("shutdown must succeed");
+
+    assert_eq!(shutdown.state, ShutdownState::Failed);
+    assert!(shutdown.handled_pids.is_empty());
+    // The reused PID is suspected even though it is also breakaway/outside-Job.
+    assert!(shutdown.suspected_pids.contains(&2301));
+}
+
+#[test]
+fn job_close_fails_closed_when_root_not_handled() {
+    // Regression: JobClose must verify the owned root is in handled_pids;
+    // if the fixture excludes the root, the shutdown must be Failed and the
+    // root recorded as suspected (the close cannot be proven to cover it).
+    let shutdown = shutdown_process_tree(&fixture_root().join("job-close-root-excluded"))
+        .expect("shutdown must succeed");
+
+    assert_eq!(shutdown.state, ShutdownState::Failed);
+    assert!(
+        shutdown.suspected_pids.contains(&2600),
+        "root must be suspected when it cannot be proven handled: {:?}",
+        shutdown.suspected_pids
+    );
+}
+
+#[test]
 fn reconciliation_failure_fails_closed() {
     let shutdown = shutdown_process_tree(&fixture_root().join("reconciliation-failed"))
         .expect("shutdown must succeed");

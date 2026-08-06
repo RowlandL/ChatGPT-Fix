@@ -64,6 +64,53 @@ fn activate_switches_pointer_and_persists_generation() {
 }
 
 #[test]
+fn two_activations_in_same_second_produce_distinct_ids() {
+    // Regression: generation_id includes a random suffix so two activations
+    // in the same second never collide on the same backup directory.
+    let root = program_root("same-second");
+
+    let g1 =
+        activate(&baseline_fixture(), &root, fixture_shortcut(), false).expect("first activate");
+    let g2 =
+        activate(&baseline_fixture(), &root, fixture_shortcut(), false).expect("second activate");
+
+    assert_ne!(
+        g1.generation_id, g2.generation_id,
+        "same-second activations must produce distinct generation IDs"
+    );
+    // Both backup directories exist independently.
+    assert!(root.join("backups").join(&g1.generation_id).exists());
+    assert!(root.join("backups").join(&g2.generation_id).exists());
+}
+
+#[test]
+fn rollback_uses_program_root_pointer_not_receipt_path() {
+    // Regression: rollback must write to <program_root>/current.json even if
+    // a tampered receipt claims a different pointer_path.
+    let root = program_root("tampered-pointer");
+    let generation =
+        activate(&baseline_fixture(), &root, fixture_shortcut(), false).expect("activate");
+
+    // Tamper with the receipt's pointer_path to point elsewhere.
+    let backup_dir = root.join("backups").join(&generation.generation_id);
+    let receipt_path = backup_dir.join("generation.json");
+    let receipt_text = fs::read_to_string(&receipt_path).expect("read receipt");
+    let tampered = receipt_text.replace(&generation.pointer_path, "D:/tampered/evil.json");
+    fs::write(&receipt_path, tampered).expect("write tampered receipt");
+
+    // Rollback must still write to the real program-root current.json.
+    let rolled = rollback(&root).expect("rollback");
+    assert_eq!(rolled.state, GenerationState::RolledBack);
+    let pointer = fs::read_to_string(root.join("current.json")).expect("read pointer");
+    assert!(
+        pointer.contains("null"),
+        "pointer must be rolled back to null"
+    );
+    // The tampered path must NOT have been written.
+    assert!(!std::path::Path::new("D:/tampered/evil.json").exists());
+}
+
+#[test]
 fn activate_refuses_unverified_baseline() {
     let root = program_root("unverified");
     // Baseline with state=staged (not verified).

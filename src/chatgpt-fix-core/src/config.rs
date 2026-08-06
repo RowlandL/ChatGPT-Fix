@@ -13,6 +13,29 @@ fn contract_error(code: &'static str, field: &str, message: impl Into<String>) -
     ContractError::new(code, field, message)
 }
 
+/// Reject path components that could escape a root: `..`, `/`, `\`, `:`,
+/// empty segments, or segments that are only dots.
+fn validate_safe_component(field: &str, value: &str) -> Result<(), ContractError> {
+    if value.is_empty() {
+        return Err(contract_error("invalid_value", field, "must not be empty"));
+    }
+    if value.contains("..") || value.contains('/') || value.contains('\\') || value.contains(':') {
+        return Err(contract_error(
+            "invalid_value",
+            field,
+            "must not contain '..', '/', '\\', or ':'",
+        ));
+    }
+    if value.chars().all(|c| c == '.') {
+        return Err(contract_error(
+            "invalid_value",
+            field,
+            "must not consist only of dots",
+        ));
+    }
+    Ok(())
+}
+
 /// Read a config file, returning `None` when it does not exist.
 fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, ContractError> {
     match fs::read(path) {
@@ -122,6 +145,10 @@ pub fn config_apply(
     // Backup any existing canary file before overwriting.
     let scope_name = proposal.scope.as_json_str();
     let target = canary_root.join(format!("{scope_name}.json"));
+    // Validate proposal_id is a safe single path component: reject `..`, `/`,
+    // `\`, `:` and empty segments so the backup directory can never escape
+    // the canary root.
+    validate_safe_component("proposal_id", &proposal.proposal_id)?;
     let backup_dir = canary_root.join("backups").join(&proposal.proposal_id);
     if target.exists() {
         fs::create_dir_all(&backup_dir).map_err(|error| {
@@ -148,11 +175,21 @@ pub fn config_apply(
             format!("cannot create canary root: {error}"),
         )
     })?;
-    fs::write(&target, &proposed_bytes).map_err(|error| {
+    // Atomic write: tmp file -> sync -> rename, consistent with every other
+    // state file in this crate. A crash never leaves a torn config.
+    let tmp_path = target.with_extension("json.tmp");
+    fs::write(&tmp_path, &proposed_bytes).map_err(|error| {
         contract_error(
             "canary_write_failed",
             "canary_root",
-            format!("cannot write canary config: {error}"),
+            format!("cannot write canary config temp file: {error}"),
+        )
+    })?;
+    fs::rename(&tmp_path, &target).map_err(|error| {
+        contract_error(
+            "canary_write_failed",
+            "canary_root",
+            format!("cannot commit canary config: {error}"),
         )
     })?;
 
@@ -181,6 +218,7 @@ pub fn config_rollback(
 
     let scope_name = proposal.scope.as_json_str();
     let target = canary_root.join(format!("{scope_name}.json"));
+    validate_safe_component("proposal_id", &proposal.proposal_id)?;
     let backup_file = canary_root
         .join("backups")
         .join(&proposal.proposal_id)
