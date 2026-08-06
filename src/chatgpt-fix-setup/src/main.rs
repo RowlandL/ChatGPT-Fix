@@ -1,13 +1,190 @@
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const PRODUCT_NAME: &str = "ChatGPT-Fix-Setup";
+const INSTALL_SUBDIR: &str = "ChatGPT-Fix";
+const BIN_SUBDIR: &str = "bin";
+const BACKUPS_SUBDIR: &str = "backups";
 
-/// P8 Setup binary (build-only).
+/// The four artifacts installed by Setup (per-user, only this project's
+/// binaries — never the official OpenAI package).
+const ARTIFACTS: [&str; 4] = [
+    "ChatGPT-Fix-Launcher.exe",
+    "ChatGPT-Fix-Manager.exe",
+    "ChatGPT-Fix-Packer.exe",
+    "ChatGPT-Fix-Setup.exe",
+];
+
+fn install_root() -> Result<PathBuf, String> {
+    match std::env::var("LOCALAPPDATA") {
+        Ok(base) if !base.is_empty() => {
+            Ok(PathBuf::from(base).join("Programs").join(INSTALL_SUBDIR))
+        }
+        _ => Err("LOCALAPPDATA is not set; cannot determine per-user install root".to_owned()),
+    }
+}
+
+fn utc_now_compact() -> String {
+    // Seconds-resolution UNIX timestamp as a compact token for backup dirs.
+    // Installs are rare; if two land in the same second the copy below fails
+    // on the already-existing backup dir (fail closed, no silent overwrite).
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+        .to_string()
+}
+
+fn copy_atomic(src: &Path, dst: &Path) -> Result<(), String> {
+    let tmp = dst.with_extension("exe.tmp");
+    fs::copy(src, &tmp).map_err(|e| format!("cannot copy {}: {e}", src.display()))?;
+    fs::rename(&tmp, dst).map_err(|e| format!("cannot commit {}: {e}", dst.display()))?;
+    Ok(())
+}
+
+/// `install --source <dir>`: per-user install of this project's four EXEs.
 ///
-/// `ChatGPT-Fix-Setup.exe` is a per-user local install/uninstall wrapper that
-/// is *built* in P8 (A1 scope) but never *run*: running Setup requires A8a.
-/// Until A8a is separately authorized this binary only answers `--version`;
-/// any install action is rejected fail-closed.
+/// Backs up any pre-existing destination files under `backups/<timestamp>/bin/`
+/// BEFORE overwriting (the Setup backup function), then installs atomically.
+fn run_install(source_dir: &Path) -> ExitCode {
+    // Verify every source artifact exists first (fail closed).
+    let mut missing = Vec::new();
+    for name in ARTIFACTS {
+        if !source_dir.join(name).is_file() {
+            missing.push(name);
+        }
+    }
+    if !missing.is_empty() {
+        eprintln!(
+            "install_failed: source directory missing artifacts: {}",
+            missing.join(", ")
+        );
+        return ExitCode::from(3);
+    }
+
+    let root = match install_root() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("install_failed: {e}");
+            return ExitCode::from(4);
+        }
+    };
+    let bin_dir = root.join(BIN_SUBDIR);
+    let backups_dir = root.join(BACKUPS_SUBDIR);
+
+    // Backup step: any file that already exists at the destination is copied
+    // to backups/<timestamp>/bin/ BEFORE being overwritten.
+    let timestamp = utc_now_compact();
+    let backup_target_dir = backups_dir.join(&timestamp).join(BIN_SUBDIR);
+    let mut backed_up = Vec::new();
+    for name in ARTIFACTS {
+        let dst = bin_dir.join(name);
+        if dst.is_file() {
+            if let Err(e) = fs::create_dir_all(&backup_target_dir) {
+                eprintln!("install_failed: cannot create backup dir: {e}");
+                return ExitCode::from(3);
+            }
+            let backup_dst = backup_target_dir.join(name);
+            if let Err(e) = fs::copy(&dst, &backup_dst) {
+                eprintln!("install_failed: cannot back up {name}: {e}");
+                return ExitCode::from(3);
+            }
+            backed_up.push(name);
+        }
+    }
+
+    // Install step: atomic copy of each artifact.
+    if let Err(e) = fs::create_dir_all(&bin_dir) {
+        eprintln!("install_failed: cannot create bin dir: {e}");
+        return ExitCode::from(3);
+    }
+    for name in ARTIFACTS {
+        if let Err(e) = copy_atomic(&source_dir.join(name), &bin_dir.join(name)) {
+            eprintln!("install_failed: {e}");
+            return ExitCode::from(3);
+        }
+    }
+
+    // Install receipt (stdout, typed schema).
+    let receipt = format!(
+        "{{\"schema\":\"chatgpt_fix.setup_receipt.v1\",\"operation\":\"install\",\"status\":\"success\",\"version\":\"{}\",\"install_root\":\"{}\",\"backups\":[{}],\"created_at_utc\":\"{}Z\"}}",
+        env!("CARGO_PKG_VERSION"),
+        root.to_string_lossy().replace('\\', "/"),
+        backed_up
+            .iter()
+            .map(|n| format!("\"{}\"", n))
+            .collect::<Vec<_>>()
+            .join(","),
+        utc_now_compact()
+    );
+    println!("{receipt}");
+    ExitCode::SUCCESS
+}
+
+/// `uninstall`: remove this project's installed EXEs (keeps backups).
+fn run_uninstall() -> ExitCode {
+    let root = match install_root() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("uninstall_failed: {e}");
+            return ExitCode::from(4);
+        }
+    };
+    let bin_dir = root.join(BIN_SUBDIR);
+    if !bin_dir.is_dir() {
+        eprintln!(
+            "uninstall_failed: install root not found: {}",
+            root.display()
+        );
+        return ExitCode::from(3);
+    }
+    let mut removed = Vec::new();
+    let mut pending = Vec::new();
+    for name in ARTIFACTS {
+        let dst = bin_dir.join(name);
+        if dst.is_file() {
+            match fs::remove_file(&dst) {
+                Ok(()) => removed.push(name),
+                Err(e) => {
+                    // A running Setup.exe cannot delete itself on Windows
+                    // (the file is locked by the executing image). This is
+                    // expected: mark it for deletion and report the uninstall
+                    // as success-with-pending so the caller knows to retry or
+                    // delete after exit. Never fail the whole uninstall for a
+                    // self-lock.
+                    if name == "ChatGPT-Fix-Setup.exe" {
+                        eprintln!(
+                            "uninstall_pending: {name} is locked by the running installer; it will be removed on the next run or manually after exit"
+                        );
+                        pending.push(name);
+                        continue;
+                    }
+                    eprintln!("uninstall_failed: cannot remove {name}: {e}");
+                    return ExitCode::from(3);
+                }
+            }
+        }
+    }
+    let receipt = format!(
+        "{{\"schema\":\"chatgpt_fix.setup_receipt.v1\",\"operation\":\"uninstall\",\"status\":\"success\",\"version\":\"{}\",\"removed\":[{}],\"pending\":[{}],\"created_at_utc\":\"{}Z\"}}",
+        env!("CARGO_PKG_VERSION"),
+        removed
+            .iter()
+            .map(|n| format!("\"{}\"", n))
+            .collect::<Vec<_>>()
+            .join(","),
+        pending
+            .iter()
+            .map(|n| format!("\"{}\"", n))
+            .collect::<Vec<_>>()
+            .join(","),
+        utc_now_compact()
+    );
+    println!("{receipt}");
+    ExitCode::SUCCESS
+}
+
 fn main() -> ExitCode {
     let mut arguments = std::env::args_os().skip(1);
     match arguments.next() {
@@ -21,10 +198,35 @@ fn main() -> ExitCode {
                 ExitCode::from(2)
             }
         },
-        Some(_) | None => {
-            // Any other invocation (including an actual install) is blocked:
-            // running Setup requires A8a, which is not granted in P8.
-            eprintln!("install_forbidden: running Setup requires A8a authorization");
+        Some(argument) if argument == std::ffi::OsStr::new("install") => {
+            // install --source <dir>
+            match (arguments.next(), arguments.next()) {
+                (Some(flag), Some(source)) if flag == std::ffi::OsStr::new("--source") => {
+                    if arguments.next().is_some() {
+                        eprintln!("Usage: {PRODUCT_NAME} install --source <dir>");
+                        ExitCode::from(2)
+                    } else {
+                        run_install(Path::new(&source))
+                    }
+                }
+                _ => {
+                    eprintln!("Usage: {PRODUCT_NAME} install --source <dir>");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some(argument) if argument == std::ffi::OsStr::new("uninstall") => {
+            if arguments.next().is_some() {
+                eprintln!("Usage: {PRODUCT_NAME} uninstall");
+                ExitCode::from(2)
+            } else {
+                run_uninstall()
+            }
+        }
+        _ => {
+            eprintln!(
+                "install_forbidden: unsupported invocation; use 'install --source <dir>', 'uninstall', or '--version'"
+            );
             ExitCode::from(4)
         }
     }
