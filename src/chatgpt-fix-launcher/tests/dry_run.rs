@@ -122,16 +122,84 @@ fn rejects_a_rejected_fixture_plan_without_launch_output() {
 }
 
 #[test]
-fn live_launch_is_refused_before_path_access() {
-    let output = Command::new(BINARY)
-        .args(["launch", "--live", r"C:\definitely-not-present\ChatGPT.exe"])
-        .output()
-        .expect("run forbidden live launch");
+fn live_launch_fails_closed_when_pointer_missing() {
+    // launch --live reads <program-root>/current.json; a missing pointer
+    // must fail closed (exit 3) rather than launching anything.
+    let root = std::env::temp_dir().join(format!(
+        "chatgpt-fix-launch-nopointer-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create program root");
 
-    assert_eq!(output.status.code(), Some(4), "stderr: {:?}", output.stderr);
+    let output = Command::new(BINARY)
+        .args(["launch", "--live"])
+        .arg(&root)
+        .output()
+        .expect("run live launch without pointer");
+
+    assert_eq!(output.status.code(), Some(3), "stderr: {:?}", output.stderr);
     assert!(output.stdout.is_empty());
-    assert_eq!(
-        output.stderr,
-        b"live_launch_forbidden: P1 launcher does not start programs\n"
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("pointer_unreadable"),
+        "stderr: {:?}",
+        output.stderr
+    );
+}
+
+#[test]
+fn live_launch_fails_closed_on_null_pointer() {
+    let root =
+        std::env::temp_dir().join(format!("chatgpt-fix-launch-nullptr-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create program root");
+    fs::write(
+        root.join("current.json"),
+        "{\"schema\":\"chatgpt_fix.pointer.v1\",\"baseline_root\":null}\n",
+    )
+    .expect("write null pointer");
+
+    let output = Command::new(BINARY)
+        .args(["launch", "--live"])
+        .arg(&root)
+        .output()
+        .expect("run live launch with null pointer");
+
+    assert_eq!(output.status.code(), Some(3), "stderr: {:?}", output.stderr);
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("pointer_null"),
+        "stderr: {:?}",
+        output.stderr
+    );
+}
+
+#[test]
+fn live_launch_resolves_pointer_and_fails_closed_when_exe_missing() {
+    // A pointer pointing at a synthetic baseline whose app dir exists but
+    // contains no ChatGPT.exe must fail closed (baseline_executable_missing).
+    let root = std::env::temp_dir().join(format!("chatgpt-fix-launch-ok-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create program root");
+    let baseline = root.join("baseline/app");
+    fs::create_dir_all(&baseline).expect("create baseline app dir");
+    fs::write(
+        root.join("current.json"),
+        format!(
+            "{{\"schema\":\"chatgpt_fix.pointer.v1\",\"baseline_root\":\"{}\"}}\n",
+            baseline.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .expect("write pointer");
+
+    let output = Command::new(BINARY)
+        .args(["launch", "--live"])
+        .arg(&root)
+        .output()
+        .expect("run live launch");
+    assert_eq!(output.status.code(), Some(3), "stderr: {:?}", output.stderr);
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("baseline_executable_missing"),
+        "stderr: {:?}",
+        output.stderr
     );
 }

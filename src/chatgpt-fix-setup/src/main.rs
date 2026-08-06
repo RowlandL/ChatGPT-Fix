@@ -106,9 +106,16 @@ fn run_install(source_dir: &Path) -> ExitCode {
         }
     }
 
+    // One-click configuration (the whole point of Setup): detect the official
+    // package, write current.json, and create shortcuts. Failures here are
+    // reported but do NOT roll back the installed binaries — the install
+    // itself succeeded.
+    let launcher = bin_dir.join("ChatGPT-Fix-Launcher.exe");
+    let config_ok = complete_one_click_config(&root, &launcher);
+
     // Install receipt (stdout, typed schema).
     let receipt = format!(
-        "{{\"schema\":\"chatgpt_fix.setup_receipt.v1\",\"operation\":\"install\",\"status\":\"success\",\"version\":\"{}\",\"install_root\":\"{}\",\"backups\":[{}],\"created_at_utc\":\"{}Z\"}}",
+        "{{\"schema\":\"chatgpt_fix.setup_receipt.v1\",\"operation\":\"install\",\"status\":\"success\",\"version\":\"{}\",\"install_root\":\"{}\",\"backups\":[{}],\"config_complete\":{},\"created_at_utc\":\"{}Z\"}}",
         env!("CARGO_PKG_VERSION"),
         root.to_string_lossy().replace('\\', "/"),
         backed_up
@@ -116,10 +123,107 @@ fn run_install(source_dir: &Path) -> ExitCode {
             .map(|n| format!("\"{}\"", n))
             .collect::<Vec<_>>()
             .join(","),
+        if config_ok { "true" } else { "false" },
         utc_now_compact()
     );
     println!("{receipt}");
     ExitCode::SUCCESS
+}
+
+/// One-click configuration: locate the official OpenAI.Codex package, write
+/// `<root>/current.json` pointing at its app directory, and create/repair the
+/// `ChatGPT.lnk` and `ChatGPT-Fix-Launcher.lnk` shortcuts so the user is done
+/// after a single double-click install.
+fn complete_one_click_config(root: &Path, launcher: &Path) -> bool {
+    let mut ok = true;
+
+    // 1. Detect the official package install location via Get-AppxPackage.
+    let mut app_root: Option<String> = None;
+    if let Ok(output) = std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "(Get-AppxPackage -Name 'OpenAI.Codex' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty InstallLocation)",
+        ])
+        .output()
+        && output.status.success()
+    {
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if !text.is_empty() {
+            app_root = Some(text);
+        }
+    }
+    if let Some(pkg_root) = app_root {
+        let exe = Path::new(&pkg_root).join("app").join("ChatGPT.exe");
+        if exe.is_file() {
+            // 2. Write current.json pointer (chatgpt_fix.pointer.v1) pointing
+            // at the package app directory (baseline root).
+            let pointer = format!(
+                "{{\"schema\":\"chatgpt_fix.pointer.v1\",\"baseline_root\":\"{}\"}}\n",
+                Path::new(&pkg_root)
+                    .join("app")
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            );
+            let pointer_path = root.join("current.json");
+            let tmp = pointer_path.with_extension("json.tmp");
+            if fs::write(&tmp, pointer).is_ok() && fs::rename(&tmp, &pointer_path).is_ok() {
+                ok = ok && true;
+            } else {
+                eprintln!("setup_warn: cannot write current.json");
+                ok = false;
+            }
+        } else {
+            eprintln!("setup_warn: official package app\\ChatGPT.exe not found at {pkg_root}");
+            ok = false;
+        }
+    } else {
+        eprintln!("setup_warn: OpenAI.Codex package not detected; current.json not written");
+        ok = false;
+    }
+
+    // 3. Create/repair shortcuts via PowerShell WScript.Shell (standard
+    // Windows shortcut authoring; Setup runs this as the installing user).
+    let shortcut_target = launcher.to_string_lossy().into_owned();
+    let work_dir = launcher
+        .parent()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let start_menu = std::env::var("APPDATA")
+        .map(|a| PathBuf::from(a).join("Microsoft/Windows/Start Menu/Programs"))
+        .unwrap_or_default();
+    let lnk_chatgpt = start_menu.join("ChatGPT.lnk");
+    let lnk_launcher = start_menu.join("ChatGPT-Fix-Launcher.lnk");
+
+    let ps = format!(
+        "$s1 = (New-Object -ComObject WScript.Shell).CreateShortcut('{}'); $s1.TargetPath = '{}'; $s1.WorkingDirectory = '{}'; $s1.Description = 'ChatGPT (launched by ChatGPT-Fix-Launcher)'; $s1.Save(); $s2 = (New-Object -ComObject WScript.Shell).CreateShortcut('{}'); $s2.TargetPath = '{}'; $s2.WorkingDirectory = '{}'; $s2.Description = 'ChatGPT-Fix-Launcher'; $s2.Save();",
+        lnk_chatgpt.to_string_lossy().replace('\'', "''"),
+        shortcut_target.replace('\'', "''"),
+        work_dir.replace('\'', "''"),
+        lnk_launcher.to_string_lossy().replace('\'', "''"),
+        shortcut_target.replace('\'', "''"),
+        work_dir.replace('\'', "''"),
+    );
+    if let Ok(output) = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
+        .output()
+    {
+        if output.status.success() {
+            ok = ok && true;
+        } else {
+            eprintln!(
+                "setup_warn: shortcut creation failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+            ok = false;
+        }
+    } else {
+        eprintln!("setup_warn: cannot run powershell for shortcut creation");
+        ok = false;
+    }
+
+    ok
 }
 
 /// `uninstall`: remove this project's installed EXEs (keeps backups).

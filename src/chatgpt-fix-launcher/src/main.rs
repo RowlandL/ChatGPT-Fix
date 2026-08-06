@@ -34,15 +34,42 @@ fn main() -> ExitCode {
         {
             run_maintenance_plan(Path::new(root))
         }
-        [command, option, _]
+        [command, option, root]
             if command == OsStr::new("launch") && option == OsStr::new("--live") =>
         {
-            eprintln!("live_launch_forbidden: P1 launcher does not start programs");
-            ExitCode::from(4)
+            run_live_launch(Path::new(root))
         }
         _ => {
             print_usage();
             ExitCode::from(2)
+        }
+    }
+}
+
+/// `ChatGPT-Fix-Launcher launch --live <program-root>`.
+///
+/// Reads `<program-root>/current.json` (chatgpt_fix.pointer.v1), resolves the
+/// baseline root, and launches `ChatGPT.exe` from that baseline. If the
+/// pointer is missing or its baseline is gone, falls back to discovering the
+/// official OpenAI.Codex package location via `Get-AppxPackage` so a package
+/// update (new version directory) never breaks the launch. Writes a launch
+/// receipt to stdout. A4a-authorized.
+fn run_live_launch(program_root: &Path) -> ExitCode {
+    let launch = match chatgpt_fix_core::launch_from_pointer(program_root) {
+        Ok(launch) => launch,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::from(3);
+        }
+    };
+    match launch.to_json() {
+        Ok(json) => {
+            println!("{json}");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("launch serialize failed: {error}");
+            ExitCode::from(4)
         }
     }
 }

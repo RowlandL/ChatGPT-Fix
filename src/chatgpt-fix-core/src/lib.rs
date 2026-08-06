@@ -20,7 +20,9 @@ pub use config::{config_apply, config_plan, config_rollback, parse_config_propos
 pub use doctor::{DOCTOR_SCHEMA, DoctorFinding, DoctorLevel, DoctorStatus, DoctorV2};
 pub use error::ContractError;
 pub use fixture::{FIXTURE_SCHEMA, FixtureError, plan_fixture};
-pub use generation::{activate, parse_shortcut_json, read_pointer, rollback, write_shortcut_json};
+pub use generation::{
+    activate, launch_from_pointer, parse_shortcut_json, read_pointer, rollback, write_shortcut_json,
+};
 pub use maintenance::{generate_maintenance_plan, register_ntc_manifest};
 pub use ownership::observe_process_tree;
 pub use path::{SafeRelativePath, Sha256Digest};

@@ -4,7 +4,8 @@ use std::path::Path;
 
 use crate::json::write_string;
 use crate::{
-    ContractError, GenerationState, GenerationV1, ShortcutBackup, StagingState, StagingV1,
+    ContractError, GenerationState, GenerationV1, LaunchV1, SafeRelativePath, ShortcutBackup,
+    StagingState, StagingV1,
 };
 
 /// The current.json pointer file name inside the ChatGPT-Fix program root.
@@ -437,4 +438,115 @@ pub fn write_shortcut_json(
         )
     })?;
     Ok(())
+}
+
+/// Launch the active ChatGPT baseline from `<program-root>/current.json`.
+///
+/// Reads the `chatgpt_fix.pointer.v1` pointer, resolves the baseline root,
+/// locates `ChatGPT.exe` (either at the baseline root or in its `app\`
+/// subdirectory), and launches it detached. The executable path in the
+/// returned `LaunchV1` is a safe relative path under the baseline root.
+///
+/// A4a-authorized. This is the real launch path (P4-era live launch);
+/// it supersedes the P1 fail-closed stub once a pointer exists.
+pub fn launch_from_pointer(program_root: &Path) -> Result<LaunchV1, ContractError> {
+    use std::process::Command;
+
+    let pointer_text = read_pointer(program_root)?;
+    let parsed = crate::json::JsonParser::new(pointer_text.as_bytes())?.parse_top_level()?;
+    let _obj = parsed.as_object()?;
+    let schema = parsed.field("schema")?.as_str()?;
+    if schema != "chatgpt_fix.pointer.v1" {
+        return Err(contract_error(
+            "schema_mismatch",
+            "schema",
+            format!("expected chatgpt_fix.pointer.v1, got {schema}"),
+        ));
+    }
+    let baseline_value = parsed.field("baseline_root")?;
+    // Handle JSON null (rolled back pointer) as a distinct fail-closed case
+    // before attempting string conversion.
+    let baseline_root = match baseline_value.as_str() {
+        Ok(s) => s,
+        Err(_) => {
+            return Err(contract_error(
+                "pointer_null",
+                "baseline_root",
+                "current.json points at no baseline (null); activate a baseline first",
+            ));
+        }
+    };
+    if baseline_root.is_empty() {
+        return Err(contract_error(
+            "pointer_null",
+            "baseline_root",
+            "current.json points at no baseline (null); activate a baseline first",
+        ));
+    }
+
+    // Resolve ChatGPT.exe under the baseline root. Accept either
+    // <root>/ChatGPT.exe or <root>/app/ChatGPT.exe (official package layout).
+    let baseline = Path::new(baseline_root);
+    let mut executable = baseline.join("ChatGPT.exe");
+    if !executable.is_file() {
+        let nested = baseline.join("app").join("ChatGPT.exe");
+        if nested.is_file() {
+            executable = nested;
+        }
+    }
+    if !executable.is_file() {
+        return Err(contract_error(
+            "baseline_executable_missing",
+            "ChatGPT.exe",
+            format!("no ChatGPT.exe found under baseline root {}", baseline_root),
+        ));
+    }
+
+    // Launch detached: the launcher does not wait for the app to exit.
+    // Dropping the Child handle detaches it — the process keeps running
+    // independently (on Windows, dropping without wait leaves the child
+    // alive; never call kill() here).
+    let _child = Command::new(&executable)
+        .current_dir(baseline)
+        .spawn()
+        .map_err(|error| {
+            contract_error(
+                "launch_spawn_failed",
+                "ChatGPT.exe",
+                format!("cannot launch ChatGPT.exe: {error}"),
+            )
+        })?;
+    // Detach: the Child is dropped without wait/kill; the app keeps running.
+    drop(_child);
+
+    // Relative executable path for the launch receipt (safe, portable).
+    let rel = executable
+        .strip_prefix(baseline)
+        .unwrap_or(&executable)
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    let launch = LaunchV1 {
+        launch_id: format!(
+            "live-{}",
+            crate::utc_now_rfc3339()
+                .replace([':', '-'], "")
+                .replace('T', "-")
+        ),
+        generation: 1,
+        baseline_id: SafeRelativePath::parse(
+            baseline
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .as_ref(),
+        )
+        .unwrap_or_else(|_| SafeRelativePath::parse("baseline").expect("static safe path")),
+        executable: SafeRelativePath::parse(&rel)
+            .map_err(|error| contract_error("invalid_value", "executable", format!("{error}")))?,
+        would_start: true,
+        reason: None,
+    };
+    launch.validate()?;
+    Ok(launch)
 }
