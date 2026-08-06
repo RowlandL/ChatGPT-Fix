@@ -154,14 +154,14 @@ fn complete_one_click_config(root: &Path, launcher: &Path) -> bool {
             app_root = Some(text);
         }
     }
-    if let Some(pkg_root) = app_root {
-        let exe = Path::new(&pkg_root).join("app").join("ChatGPT.exe");
+    if let Some(pkg_root) = app_root.as_deref() {
+        let exe = Path::new(pkg_root).join("app").join("ChatGPT.exe");
         if exe.is_file() {
             // 2. Write current.json pointer (chatgpt_fix.pointer.v1) pointing
             // at the package app directory (baseline root).
             let pointer = format!(
                 "{{\"schema\":\"chatgpt_fix.pointer.v1\",\"baseline_root\":\"{}\"}}\n",
-                Path::new(&pkg_root)
+                Path::new(pkg_root)
                     .join("app")
                     .to_string_lossy()
                     .replace('\\', "/")
@@ -183,8 +183,13 @@ fn complete_one_click_config(root: &Path, launcher: &Path) -> bool {
         ok = false;
     }
 
-    // 3. Create/repair shortcuts via PowerShell WScript.Shell (standard
-    // Windows shortcut authoring; Setup runs this as the installing user).
+    // 3. Create/repair shortcuts. IMPORTANT (user feedback): the fix is a
+    // wrapper and must NOT override the official startup method. So:
+    //   - ChatGPT.lnk keeps the OFFICIAL launch (shell:AppsFolder AUMID),
+    //     preserving the official icon and startup path; a package update
+    //     never breaks it because no version path is embedded.
+    //   - ChatGPT-Fix-Launcher.lnk points at our Launcher (the wrapper) as a
+    //     separate entry, with the official ChatGPT icon.
     let shortcut_target = launcher.to_string_lossy().into_owned();
     let work_dir = launcher
         .parent()
@@ -196,14 +201,26 @@ fn complete_one_click_config(root: &Path, launcher: &Path) -> bool {
     let lnk_chatgpt = start_menu.join("ChatGPT.lnk");
     let lnk_launcher = start_menu.join("ChatGPT-Fix-Launcher.lnk");
 
+    // Official package family name for the AUMID launch. The publisher id is
+    // stable across package versions, so the AUMID survives updates.
+    const AUMID: &str = "shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App";
+    // Icon: the official package exe (embedded icon); if the current version
+    // path is gone (package updated), fall back to no icon (default).
+    let official_icon = app_root
+        .as_deref()
+        .map(|p| Path::new(p).join("app").join("ChatGPT.exe"))
+        .filter(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
     let ps = format!(
-        "$s1 = (New-Object -ComObject WScript.Shell).CreateShortcut('{}'); $s1.TargetPath = '{}'; $s1.WorkingDirectory = '{}'; $s1.Description = 'ChatGPT (launched by ChatGPT-Fix-Launcher)'; $s1.Save(); $s2 = (New-Object -ComObject WScript.Shell).CreateShortcut('{}'); $s2.TargetPath = '{}'; $s2.WorkingDirectory = '{}'; $s2.Description = 'ChatGPT-Fix-Launcher'; $s2.Save();",
+        "$s1 = (New-Object -ComObject WScript.Shell).CreateShortcut('{}'); $s1.TargetPath = 'C:\\Windows\\explorer.exe'; $s1.Arguments = '{}'; $s1.WorkingDirectory = 'C:\\Windows'; $s1.Description = 'ChatGPT (official)'; $s1.Save(); $s2 = (New-Object -ComObject WScript.Shell).CreateShortcut('{}'); $s2.TargetPath = '{}'; $s2.WorkingDirectory = '{}'; $s2.Description = 'ChatGPT-Fix-Launcher (wrapper)'; $s2.IconLocation = '{}'; $s2.Save();",
         lnk_chatgpt.to_string_lossy().replace('\'', "''"),
-        shortcut_target.replace('\'', "''"),
-        work_dir.replace('\'', "''"),
+        AUMID.replace('\'', "''"),
         lnk_launcher.to_string_lossy().replace('\'', "''"),
         shortcut_target.replace('\'', "''"),
         work_dir.replace('\'', "''"),
+        official_icon.replace('\'', "''"),
     );
     if let Ok(output) = std::process::Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
