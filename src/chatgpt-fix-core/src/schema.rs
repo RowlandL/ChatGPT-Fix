@@ -12,6 +12,7 @@ pub const LIVE_INSPECTION_SCHEMA: &str = "chatgpt_fix.live_inspection.v1";
 pub const STAGING_SCHEMA: &str = "chatgpt_fix.staging.v1";
 pub const GENERATION_SCHEMA: &str = "chatgpt_fix.generation.v1";
 pub const OWNERSHIP_SCHEMA: &str = "chatgpt_fix.ownership.v1";
+pub const SHUTDOWN_SCHEMA: &str = "chatgpt_fix.shutdown.v1";
 
 /// The ownership observation state machine (report-only).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -1349,5 +1350,246 @@ impl OwnershipV1 {
         };
         ownership.validate()?;
         Ok(ownership)
+    }
+}
+
+/// The shutdown mode for a controlled owned-tree shutdown.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ShutdownMode {
+    /// Graceful shutdown: signal the owned root and let the tree exit.
+    Graceful,
+    /// Job close: close the Job Object so the owned tree is terminated.
+    JobClose,
+}
+
+impl ShutdownMode {
+    pub(crate) fn as_json_str(self) -> &'static str {
+        match self {
+            Self::Graceful => "graceful",
+            Self::JobClose => "job_close",
+        }
+    }
+
+    pub(crate) fn from_json_str(s: &str) -> Result<Self, ContractError> {
+        match s {
+            "graceful" => Ok(Self::Graceful),
+            "job_close" => Ok(Self::JobClose),
+            other => Err(ContractError::new(
+                "invalid_value",
+                "shutdown_mode",
+                format!("expected 'graceful' or 'job_close', got '{other}'"),
+            )),
+        }
+    }
+}
+
+/// The shutdown state machine: prepared -> shutdown -> closed, or failed.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ShutdownState {
+    Prepared,
+    Shutdown,
+    Closed,
+    Failed,
+}
+
+impl ShutdownState {
+    fn as_json_str(self) -> &'static str {
+        match self {
+            Self::Prepared => "prepared",
+            Self::Shutdown => "shutdown",
+            Self::Closed => "closed",
+            Self::Failed => "failed",
+        }
+    }
+
+    fn from_json_str(s: &str) -> Result<Self, ContractError> {
+        match s {
+            "prepared" => Ok(Self::Prepared),
+            "shutdown" => Ok(Self::Shutdown),
+            "closed" => Ok(Self::Closed),
+            "failed" => Ok(Self::Failed),
+            other => Err(ContractError::new(
+                "invalid_value",
+                "state",
+                format!("expected 'prepared', 'shutdown', 'closed', or 'failed', got '{other}'"),
+            )),
+        }
+    }
+}
+
+/// The controlled shutdown receipt (`chatgpt_fix.shutdown.v1`).
+///
+/// Produced by `ChatGPT-Fix-Launcher shutdown --fixture-root <path>`.
+/// Only PIDs that are explicit owned members of the reconciled tree may be
+/// shut down (`handled_pids`). Breakaway/outside-Job members are `excluded`;
+/// reconciliation failures are `suspected` and any suspected hit fails the
+/// shutdown closed (fail closed).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ShutdownV1 {
+    pub launch_id: String,
+    pub root_pid: u64,
+    pub shutdown_mode: ShutdownMode,
+    pub handled_pids: Vec<u64>,
+    pub excluded_pids: Vec<u64>,
+    pub suspected_pids: Vec<u64>,
+    pub state: ShutdownState,
+    pub created_at_utc: String,
+}
+
+impl ShutdownV1 {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        validate_text("launch_id", &self.launch_id)?;
+        validate_text("created_at_utc", &self.created_at_utc)?;
+        if self.root_pid == 0 {
+            return Err(ContractError::new(
+                "invalid_value",
+                "root_pid",
+                "must be greater than zero",
+            ));
+        }
+        for pid in self
+            .handled_pids
+            .iter()
+            .chain(self.excluded_pids.iter())
+            .chain(self.suspected_pids.iter())
+        {
+            if *pid == 0 {
+                return Err(ContractError::new(
+                    "invalid_value",
+                    "pids",
+                    "every listed pid must be greater than zero",
+                ));
+            }
+        }
+        if self.state != ShutdownState::Failed && !self.handled_pids.contains(&self.root_pid) {
+            return Err(ContractError::new(
+                "invalid_value",
+                "handled_pids",
+                "the owned root pid must be part of the handled set",
+            ));
+        }
+        if self.state == ShutdownState::Failed && self.suspected_pids.is_empty() {
+            return Err(ContractError::new(
+                "invalid_value",
+                "suspected_pids",
+                "a failed shutdown must record at least one suspected pid",
+            ));
+        }
+        if !self.suspected_pids.is_empty() && self.state != ShutdownState::Failed {
+            return Err(ContractError::new(
+                "invalid_value",
+                "state",
+                "a shutdown with suspected pids must be failed",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> Result<String, ContractError> {
+        let mut output = String::new();
+        output.push_str("{\"schema\":");
+        write_string(&mut output, SHUTDOWN_SCHEMA);
+        output.push_str(",\"launch_id\":");
+        write_string(&mut output, &self.launch_id);
+        write!(&mut output, ",\"root_pid\":{}", self.root_pid)
+            .expect("writing JSON to a String cannot fail");
+        output.push_str(",\"shutdown_mode\":");
+        write_string(&mut output, self.shutdown_mode.as_json_str());
+        output.push_str(",\"handled_pids\":[");
+        for (i, pid) in self.handled_pids.iter().enumerate() {
+            if i != 0 {
+                output.push(',');
+            }
+            write!(&mut output, "{pid}").expect("writing JSON to a String cannot fail");
+        }
+        output.push(']');
+        output.push_str(",\"excluded_pids\":[");
+        for (i, pid) in self.excluded_pids.iter().enumerate() {
+            if i != 0 {
+                output.push(',');
+            }
+            write!(&mut output, "{pid}").expect("writing JSON to a String cannot fail");
+        }
+        output.push(']');
+        output.push_str(",\"suspected_pids\":[");
+        for (i, pid) in self.suspected_pids.iter().enumerate() {
+            if i != 0 {
+                output.push(',');
+            }
+            write!(&mut output, "{pid}").expect("writing JSON to a String cannot fail");
+        }
+        output.push(']');
+        output.push_str(",\"state\":");
+        write_string(&mut output, self.state.as_json_str());
+        output.push_str(",\"created_at_utc\":");
+        write_string(&mut output, &self.created_at_utc);
+        output.push('}');
+        Ok(output)
+    }
+
+    pub fn from_json(json: &[u8]) -> Result<Self, ContractError> {
+        let parsed = JsonParser::new(json)?.parse_top_level()?;
+        let _obj = parsed.as_object()?;
+
+        let schema = parsed.field("schema")?.as_str()?;
+        if schema != SHUTDOWN_SCHEMA {
+            return Err(ContractError::new(
+                "schema_mismatch",
+                "schema",
+                format!("expected {}, got {}", SHUTDOWN_SCHEMA, schema),
+            ));
+        }
+
+        let get_str = |key: &str| -> Result<String, ContractError> {
+            Ok(parsed.field(key)?.as_str()?.to_owned())
+        };
+        let get_u64 = |key: &str| -> Result<u64, ContractError> {
+            let n = parsed.field(key)?.as_i64()?;
+            if n < 0 {
+                return Err(ContractError::new(
+                    "json_value",
+                    key,
+                    "must be non-negative",
+                ));
+            }
+            Ok(n as u64)
+        };
+
+        let launch_id = get_str("launch_id")?;
+        let root_pid = get_u64("root_pid")?;
+        let shutdown_mode = ShutdownMode::from_json_str(get_str("shutdown_mode")?.as_str())?;
+        let state = ShutdownState::from_json_str(get_str("state")?.as_str())?;
+        let created_at_utc = get_str("created_at_utc")?;
+
+        let get_pids = |key: &str| -> Result<Vec<u64>, ContractError> {
+            let value = parsed.field(key)?;
+            let array = value.as_array()?;
+            let mut pids = Vec::with_capacity(array.len());
+            for entry in array {
+                let n = entry.as_i64()?;
+                if n <= 0 {
+                    return Err(ContractError::new(
+                        "invalid_value",
+                        key,
+                        "every pid must be greater than zero",
+                    ));
+                }
+                pids.push(n as u64);
+            }
+            Ok(pids)
+        };
+
+        let shutdown = ShutdownV1 {
+            launch_id,
+            root_pid,
+            shutdown_mode,
+            handled_pids: get_pids("handled_pids")?,
+            excluded_pids: get_pids("excluded_pids")?,
+            suspected_pids: get_pids("suspected_pids")?,
+            state,
+            created_at_utc,
+        };
+        shutdown.validate()?;
+        Ok(shutdown)
     }
 }

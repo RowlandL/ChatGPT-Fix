@@ -23,6 +23,11 @@ fn main() -> ExitCode {
         {
             observe_fixture(Path::new(root))
         }
+        [command, option, root]
+            if command == OsStr::new("shutdown") && option == OsStr::new("--fixture-root") =>
+        {
+            shutdown_fixture(Path::new(root))
+        }
         [command, option, _]
             if command == OsStr::new("launch") && option == OsStr::new("--live") =>
         {
@@ -50,6 +55,31 @@ fn observe_fixture(root: &Path) -> ExitCode {
             }
             Err(error) => {
                 eprintln!("invalid_ownership at {}: {error}", root.display());
+                ExitCode::from(3)
+            }
+        },
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(3)
+        }
+    }
+}
+
+/// `ChatGPT-Fix-Launcher shutdown --fixture-root <path>`.
+///
+/// Controlled shutdown of an owned tree (A5-owned-shutdown scope): parses the
+/// synthetic process tree and emits a `chatgpt_fix.shutdown.v1` receipt. Only
+/// reconciled, in-Job, non-breakaway PIDs are handled; breakaway and
+/// outside-Job PIDs are excluded; any suspected hit fails closed.
+fn shutdown_fixture(root: &Path) -> ExitCode {
+    match chatgpt_fix_core::shutdown_process_tree(root) {
+        Ok(shutdown) => match shutdown.to_json() {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("invalid_shutdown at {}: {error}", root.display());
                 ExitCode::from(3)
             }
         },
@@ -146,5 +176,6 @@ fn print_usage() {
     eprintln!("Usage: {PRODUCT_NAME} --version");
     eprintln!("       {PRODUCT_NAME} dry-run --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} observe --fixture-root <path>");
+    eprintln!("       {PRODUCT_NAME} shutdown --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} launch --live <path>");
 }

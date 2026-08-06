@@ -11,6 +11,7 @@ mod path;
 mod probe;
 mod schema;
 mod sha256;
+mod shutdown;
 mod staging;
 
 pub use doctor::{DOCTOR_SCHEMA, DoctorFinding, DoctorLevel, DoctorStatus, DoctorV2};
@@ -27,10 +28,12 @@ pub use schema::{
     BASELINE_SCHEMA, BaselineV2, BreakawayEvent, GENERATION_SCHEMA, GenerationState, GenerationV1,
     JobMemberEntry, LAUNCH_SCHEMA, LIVE_INSPECTION_SCHEMA, LaunchV1, LiveInspectionV1,
     OWNERSHIP_SCHEMA, OwnershipState, OwnershipV1, PLAN_SCHEMA, PlanAction, PlanActionKind,
-    PlanDecision, PlanV1, RECEIPT_SCHEMA, ReceiptV1, STAGING_SCHEMA, ShortcutBackup,
-    StagingFileEntry, StagingState, StagingV1,
+    PlanDecision, PlanV1, RECEIPT_SCHEMA, ReceiptV1, SHUTDOWN_SCHEMA, STAGING_SCHEMA,
+    ShortcutBackup, ShutdownMode, ShutdownState, ShutdownV1, StagingFileEntry, StagingState,
+    StagingV1,
 };
 pub use sha256::sha256_bytes;
+pub use shutdown::shutdown_process_tree;
 pub use staging::{read_staging_state, stage_from_probe, verify_staging};
 
 /// Current UTC time formatted as an RFC 3339 timestamp with Z suffix.
