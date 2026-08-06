@@ -204,31 +204,39 @@ fn complete_one_click_config(root: &Path, launcher: &Path) -> bool {
     // Official package family name for the AUMID launch. The publisher id is
     // stable across package versions, so the AUMID survives updates.
     const AUMID: &str = "shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App";
-    // Icon: prefer the version-independent LOCAL ico (chatgpt-icon.ico) so a
-    // package update never breaks the shortcut icon. Fall back to the
-    // official package exe (embedded icon) only when the local ico is absent.
-    let local_icon = root.join("chatgpt-icon.ico");
-    let icon_path = if local_icon.is_file() {
-        local_icon.to_string_lossy().into_owned()
+    // Icons: prefer the version-independent LOCAL icos so a package update
+    // never breaks the shortcut icons. The two shortcuts get distinct
+    // icons so the user can tell them apart at a glance:
+    //   - ChatGPT.lnk          -> chatgpt-icon.ico     (official ChatGPT logo)
+    //   - ChatGPT-Fix-Launcher -> chatgpt-fix-icon.ico (same logo + badge)
+    let local_official = root.join("chatgpt-icon.ico");
+    let local_fix = root.join("chatgpt-fix-icon.ico");
+    let fallback_exe = app_root
+        .as_deref()
+        .map(|p| Path::new(p).join("app").join("ChatGPT.exe"))
+        .filter(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned());
+    let official_icon = if local_official.is_file() {
+        local_official.to_string_lossy().into_owned()
     } else {
-        app_root
-            .as_deref()
-            .map(|p| Path::new(p).join("app").join("ChatGPT.exe"))
-            .filter(|p| p.is_file())
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default()
+        fallback_exe.clone().unwrap_or_default()
+    };
+    let fix_icon = if local_fix.is_file() {
+        local_fix.to_string_lossy().into_owned()
+    } else {
+        fallback_exe.unwrap_or_default()
     };
 
     let ps = format!(
         "$sh = New-Object -ComObject WScript.Shell; try {{ $s1 = $sh.CreateShortcut('{}'); $s1.TargetPath = 'C:\\Windows\\explorer.exe'; $s1.Arguments = '{}'; $s1.WorkingDirectory = 'C:\\Windows'; $s1.Description = 'ChatGPT (official)'; $s1.IconLocation = '{}'; $s1.Save(); if (-not (Test-Path -LiteralPath '{}')) {{ throw 'ChatGPT.lnk not created' }} }} catch {{ Write-Error $_; exit 1 }}; try {{ $s2 = $sh.CreateShortcut('{}'); $s2.TargetPath = '{}'; $s2.WorkingDirectory = '{}'; $s2.Description = 'ChatGPT-Fix-Launcher (wrapper)'; $s2.IconLocation = '{}'; $s2.Save(); if (-not (Test-Path -LiteralPath '{}')) {{ throw 'Launcher.lnk not created' }} }} catch {{ Write-Error $_; exit 1 }}",
         lnk_chatgpt.to_string_lossy().replace('\'', "''"),
         AUMID.replace('\'', "''"),
-        icon_path.replace('\'', "''"),
+        official_icon.replace('\'', "''"),
         lnk_chatgpt.to_string_lossy().replace('\'', "''"),
         lnk_launcher.to_string_lossy().replace('\'', "''"),
         shortcut_target.replace('\'', "''"),
         work_dir.replace('\'', "''"),
-        icon_path.replace('\'', "''"),
+        fix_icon.replace('\'', "''"),
         lnk_launcher.to_string_lossy().replace('\'', "''"),
     );
     // Run, and on failure retry once (transient locks from a still-running
