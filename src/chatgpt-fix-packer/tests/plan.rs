@@ -155,6 +155,8 @@ fn rejects_live_style_arguments_before_path_access() {
             "       ChatGPT-Fix-Packer plan --probe-json <path>\n",
             "       ChatGPT-Fix-Packer inspect --live-readonly\n",
             "       ChatGPT-Fix-Packer plan --live-readonly\n",
+            "       ChatGPT-Fix-Packer stage --probe-json <path> --out <staging-root>\n",
+            "       ChatGPT-Fix-Packer verify --staging <path>\n",
         )
         .as_bytes()
     );

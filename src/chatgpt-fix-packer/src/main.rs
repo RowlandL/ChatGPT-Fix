@@ -47,9 +47,67 @@ fn main() -> ExitCode {
         {
             run_live_plan()
         }
+        [command, option, path, out_option, out_root]
+            if command == OsStr::new("stage")
+                && option == OsStr::new("--probe-json")
+                && out_option == OsStr::new("--out") =>
+        {
+            run_stage(Path::new(path), Path::new(out_root))
+        }
+        [command, option, path]
+            if command == OsStr::new("verify") && option == OsStr::new("--staging") =>
+        {
+            run_verify(Path::new(path))
+        }
         _ => {
             print_usage();
             ExitCode::from(2)
+        }
+    }
+}
+
+/// `ChatGPT-Fix-Packer stage --probe-json <path> --out <staging-root>`.
+///
+/// Only A3-authorized paths are written; the staging receipt JSON is printed
+/// to stdout on success.
+fn run_stage(probe_json: &Path, out_root: &Path) -> ExitCode {
+    match chatgpt_fix_core::stage_from_probe(probe_json, out_root) {
+        Ok(staging) => match staging.to_json() {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("staging serialize failed: {err}");
+                ExitCode::from(4)
+            }
+        },
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::from(3)
+        }
+    }
+}
+
+/// `ChatGPT-Fix-Packer verify --staging <root>`.
+///
+/// Recomputes staged file hashes and flips the state to `verified` only on a
+/// full match. Any mismatch fails closed and leaves the staging quarantined.
+fn run_verify(staging_root: &Path) -> ExitCode {
+    match chatgpt_fix_core::verify_staging(staging_root) {
+        Ok(staging) => match staging.to_json() {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("staging serialize failed: {err}");
+                ExitCode::from(4)
+            }
+        },
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::from(3)
         }
     }
 }
@@ -122,6 +180,8 @@ fn print_usage() {
     eprintln!("       {PRODUCT_NAME} plan --probe-json <path>");
     eprintln!("       {PRODUCT_NAME} inspect --live-readonly");
     eprintln!("       {PRODUCT_NAME} plan --live-readonly");
+    eprintln!("       {PRODUCT_NAME} stage --probe-json <path> --out <staging-root>");
+    eprintln!("       {PRODUCT_NAME} verify --staging <path>");
 }
 
 /// Run a live pwsh probe and return the canonical inspection JSON.

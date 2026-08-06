@@ -9,6 +9,38 @@ pub const BASELINE_SCHEMA: &str = "chatgpt_fix.baseline.v2";
 pub const LAUNCH_SCHEMA: &str = "chatgpt_fix.launch.v1";
 pub const RECEIPT_SCHEMA: &str = "chatgpt_fix.receipt.v1";
 pub const LIVE_INSPECTION_SCHEMA: &str = "chatgpt_fix.live_inspection.v1";
+pub const STAGING_SCHEMA: &str = "chatgpt_fix.staging.v1";
+
+/// The staging state machine: staged -> verified, or quarantined on failure.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum StagingState {
+    Staged,
+    Verified,
+    Quarantined,
+}
+
+impl StagingState {
+    fn as_json_str(self) -> &'static str {
+        match self {
+            Self::Staged => "staged",
+            Self::Verified => "verified",
+            Self::Quarantined => "quarantined",
+        }
+    }
+
+    fn from_json_str(s: &str) -> Result<Self, ContractError> {
+        match s {
+            "staged" => Ok(Self::Staged),
+            "verified" => Ok(Self::Verified),
+            "quarantined" => Ok(Self::Quarantined),
+            other => Err(ContractError::new(
+                "invalid_value",
+                "state",
+                format!("expected 'staged', 'verified', or 'quarantined', got '{other}'"),
+            )),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum PlanDecision {
@@ -762,4 +794,180 @@ fn validate_text(field: &'static str, value: &str) -> Result<(), ContractError> 
         ));
     }
     Ok(())
+}
+
+/// A single staged file entry inside a `StagingV1` hash manifest.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StagingFileEntry {
+    pub relative_path: SafeRelativePath,
+    pub bytes: u64,
+    pub sha256: Sha256Digest,
+}
+
+/// The immutable-baseline staging receipt (`chatgpt_fix.staging.v1`).
+///
+/// Produced by `ChatGPT-Fix-Packer stage --probe-json <path> --out <root>`
+/// and consumed by `verify --staging <root>`. A staging that fails
+/// validation is marked `quarantined` and is never promoted to a baseline.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StagingV1 {
+    pub source_package_full_name: String,
+    pub source_version: String,
+    pub source_hash_manifest: Vec<StagingFileEntry>,
+    pub staging_root: String,
+    pub baseline_root: String,
+    pub files_staged: u64,
+    pub total_bytes: u64,
+    pub state: StagingState,
+    pub created_at_utc: String,
+}
+
+impl StagingV1 {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        validate_text("source_package_full_name", &self.source_package_full_name)?;
+        validate_text("source_version", &self.source_version)?;
+        validate_text("staging_root", &self.staging_root)?;
+        validate_text("baseline_root", &self.baseline_root)?;
+        validate_text("created_at_utc", &self.created_at_utc)?;
+
+        if self.source_hash_manifest.is_empty() {
+            return Err(ContractError::new(
+                "invalid_value",
+                "source_hash_manifest",
+                "must not be empty",
+            ));
+        }
+        if self.files_staged != self.source_hash_manifest.len() as u64 {
+            return Err(ContractError::new(
+                "invariant_violation",
+                "files_staged",
+                "must equal source_hash_manifest length",
+            ));
+        }
+
+        let mut total: u64 = 0;
+        for entry in &self.source_hash_manifest {
+            total = total
+                .checked_add(entry.bytes)
+                .ok_or_else(|| ContractError::new("overflow", "bytes", "total bytes overflow"))?;
+        }
+        if self.total_bytes != total {
+            return Err(ContractError::new(
+                "invariant_violation",
+                "total_bytes",
+                "must equal the sum of manifest entry bytes",
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> Result<String, ContractError> {
+        let mut output = String::new();
+        output.push_str("{\"schema\":");
+        write_string(&mut output, STAGING_SCHEMA);
+        output.push_str(",\"source_package_full_name\":");
+        write_string(&mut output, &self.source_package_full_name);
+        output.push_str(",\"source_version\":");
+        write_string(&mut output, &self.source_version);
+        output.push_str(",\"source_hash_manifest\":[");
+        for (i, entry) in self.source_hash_manifest.iter().enumerate() {
+            if i != 0 {
+                output.push(',');
+            }
+            output.push_str("{\"relative_path\":");
+            write_string(&mut output, entry.relative_path.as_str());
+            write!(&mut output, ",\"bytes\":{}", entry.bytes)
+                .expect("writing JSON to a String cannot fail");
+            output.push_str(",\"sha256\":");
+            write_string(&mut output, entry.sha256.as_str());
+            output.push('}');
+        }
+        output.push(']');
+        output.push_str(",\"staging_root\":");
+        write_string(&mut output, &self.staging_root);
+        output.push_str(",\"baseline_root\":");
+        write_string(&mut output, &self.baseline_root);
+        write!(&mut output, ",\"files_staged\":{}", self.files_staged)
+            .expect("writing JSON to a String cannot fail");
+        write!(&mut output, ",\"total_bytes\":{}", self.total_bytes)
+            .expect("writing JSON to a String cannot fail");
+        output.push_str(",\"state\":");
+        write_string(&mut output, self.state.as_json_str());
+        output.push_str(",\"created_at_utc\":");
+        write_string(&mut output, &self.created_at_utc);
+        output.push('}');
+        Ok(output)
+    }
+
+    pub fn from_json(json: &[u8]) -> Result<Self, ContractError> {
+        let parsed = JsonParser::new(json)?.parse_top_level()?;
+        let _obj = parsed.as_object()?;
+
+        let schema = parsed.field("schema")?.as_str()?;
+        if schema != STAGING_SCHEMA {
+            return Err(ContractError::new(
+                "schema_mismatch",
+                "schema",
+                format!("expected {}, got {}", STAGING_SCHEMA, schema),
+            ));
+        }
+
+        let make_err = |field: &str, msg: &str| -> ContractError {
+            ContractError::new("json_value", field, msg)
+        };
+
+        let get_str = |key: &str| -> Result<String, ContractError> {
+            Ok(parsed.field(key)?.as_str()?.to_owned())
+        };
+        let get_u64 = |key: &str| -> Result<u64, ContractError> {
+            let n = parsed.field(key)?.as_i64()?;
+            if n < 0 {
+                return Err(make_err(key, "must be non-negative"));
+            }
+            Ok(n as u64)
+        };
+
+        let source_package_full_name = get_str("source_package_full_name")?;
+        let source_version = get_str("source_version")?;
+        let staging_root = get_str("staging_root")?;
+        let baseline_root = get_str("baseline_root")?;
+        let files_staged = get_u64("files_staged")?;
+        let total_bytes = get_u64("total_bytes")?;
+        let state = StagingState::from_json_str(get_str("state")?.as_str())?;
+        let created_at_utc = get_str("created_at_utc")?;
+
+        let manifest_value = parsed.field("source_hash_manifest")?;
+        let entries = manifest_value.as_array()?;
+        let mut source_hash_manifest = Vec::with_capacity(entries.len());
+        for entry_value in entries {
+            let relative_path =
+                SafeRelativePath::parse(entry_value.field("relative_path")?.as_str()?)?;
+            let bytes = entry_value.field("bytes")?.as_i64()?;
+            if bytes < 0 {
+                return Err(make_err("bytes", "must be non-negative"));
+            }
+            let sha256 = Sha256Digest::parse(entry_value.field("sha256")?.as_str()?)
+                .map_err(|_| make_err("sha256", "invalid SHA-256"))?;
+            source_hash_manifest.push(StagingFileEntry {
+                relative_path,
+                bytes: bytes as u64,
+                sha256,
+            });
+        }
+
+        let staging = StagingV1 {
+            source_package_full_name,
+            source_version,
+            source_hash_manifest,
+            staging_root,
+            baseline_root,
+            files_staged,
+            total_bytes,
+            state,
+            created_at_utc,
+        };
+        staging.validate()?;
+        Ok(staging)
+    }
 }
