@@ -18,6 +18,11 @@ fn main() -> ExitCode {
         {
             dry_run_fixture(Path::new(root))
         }
+        [command, option, root]
+            if command == OsStr::new("observe") && option == OsStr::new("--fixture-root") =>
+        {
+            observe_fixture(Path::new(root))
+        }
         [command, option, _]
             if command == OsStr::new("launch") && option == OsStr::new("--live") =>
         {
@@ -27,6 +32,30 @@ fn main() -> ExitCode {
         _ => {
             print_usage();
             ExitCode::from(2)
+        }
+    }
+}
+
+/// `ChatGPT-Fix-Launcher observe --fixture-root <path>`.
+///
+/// Report-only ownership observation: parses the synthetic process tree and
+/// emits a `chatgpt_fix.ownership.v1` receipt. No Job close, no graceful
+/// shutdown, no terminate.
+fn observe_fixture(root: &Path) -> ExitCode {
+    match chatgpt_fix_core::observe_process_tree(root) {
+        Ok(ownership) => match ownership.to_json() {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("invalid_ownership at {}: {error}", root.display());
+                ExitCode::from(3)
+            }
+        },
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(3)
         }
     }
 }
@@ -116,5 +145,6 @@ fn render_dry_run(plan: &chatgpt_fix_core::PlanV1) -> Result<(String, String), S
 fn print_usage() {
     eprintln!("Usage: {PRODUCT_NAME} --version");
     eprintln!("       {PRODUCT_NAME} dry-run --fixture-root <path>");
+    eprintln!("       {PRODUCT_NAME} observe --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} launch --live <path>");
 }

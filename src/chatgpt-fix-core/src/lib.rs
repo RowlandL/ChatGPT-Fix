@@ -6,6 +6,7 @@ mod error;
 mod fixture;
 mod generation;
 mod json;
+mod ownership;
 mod path;
 mod probe;
 mod schema;
@@ -16,14 +17,16 @@ pub use doctor::{DOCTOR_SCHEMA, DoctorFinding, DoctorLevel, DoctorStatus, Doctor
 pub use error::ContractError;
 pub use fixture::{FIXTURE_SCHEMA, FixtureError, plan_fixture};
 pub use generation::{activate, parse_shortcut_json, read_pointer, rollback, write_shortcut_json};
+pub use ownership::observe_process_tree;
 pub use path::{SafeRelativePath, Sha256Digest};
 pub use probe::{
     A2_P2_ENV, inspect_live_json, inspect_probe_json, plan_from_probe, plan_live_json,
     plan_probe_json,
 };
 pub use schema::{
-    BASELINE_SCHEMA, BaselineV2, GENERATION_SCHEMA, GenerationState, GenerationV1, LAUNCH_SCHEMA,
-    LIVE_INSPECTION_SCHEMA, LaunchV1, LiveInspectionV1, PLAN_SCHEMA, PlanAction, PlanActionKind,
+    BASELINE_SCHEMA, BaselineV2, BreakawayEvent, GENERATION_SCHEMA, GenerationState, GenerationV1,
+    JobMemberEntry, LAUNCH_SCHEMA, LIVE_INSPECTION_SCHEMA, LaunchV1, LiveInspectionV1,
+    OWNERSHIP_SCHEMA, OwnershipState, OwnershipV1, PLAN_SCHEMA, PlanAction, PlanActionKind,
     PlanDecision, PlanV1, RECEIPT_SCHEMA, ReceiptV1, STAGING_SCHEMA, ShortcutBackup,
     StagingFileEntry, StagingState, StagingV1,
 };

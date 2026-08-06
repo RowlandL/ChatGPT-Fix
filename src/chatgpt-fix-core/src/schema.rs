@@ -11,6 +11,38 @@ pub const RECEIPT_SCHEMA: &str = "chatgpt_fix.receipt.v1";
 pub const LIVE_INSPECTION_SCHEMA: &str = "chatgpt_fix.live_inspection.v1";
 pub const STAGING_SCHEMA: &str = "chatgpt_fix.staging.v1";
 pub const GENERATION_SCHEMA: &str = "chatgpt_fix.generation.v1";
+pub const OWNERSHIP_SCHEMA: &str = "chatgpt_fix.ownership.v1";
+
+/// The ownership observation state machine (report-only).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum OwnershipState {
+    Observing,
+    Observed,
+    Reconciled,
+}
+
+impl OwnershipState {
+    fn as_json_str(self) -> &'static str {
+        match self {
+            Self::Observing => "observing",
+            Self::Observed => "observed",
+            Self::Reconciled => "reconciled",
+        }
+    }
+
+    fn from_json_str(s: &str) -> Result<Self, ContractError> {
+        match s {
+            "observing" => Ok(Self::Observing),
+            "observed" => Ok(Self::Observed),
+            "reconciled" => Ok(Self::Reconciled),
+            other => Err(ContractError::new(
+                "invalid_value",
+                "state",
+                format!("expected 'observing', 'observed', or 'reconciled', got '{other}'"),
+            )),
+        }
+    }
+}
 
 /// The generation state machine for the pointer/shortcut transaction.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -1147,5 +1179,175 @@ impl GenerationV1 {
             )
         })?;
         Ok(generation)
+    }
+}
+
+/// A single Job Object membership record observed for one process.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JobMemberEntry {
+    pub pid: u64,
+    pub name: String,
+    pub in_job: bool,
+    pub breakaway: bool,
+}
+
+/// A breakaway event (a process leaving the Job Object).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BreakawayEvent {
+    pub pid: u64,
+    pub name: String,
+    pub event: String,
+}
+
+/// The ownership observation receipt (`chatgpt_fix.ownership.v1`).
+///
+/// Produced by `ChatGPT-Fix-Launcher observe --fixture-root <path>`.
+/// Observation is report-only: no Job close, no graceful shutdown, no
+/// terminate. `exit_report` and ledger reconciliation describe differences
+/// without acting on them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnershipV1 {
+    pub launch_id: String,
+    pub root_pid: u64,
+    pub job_members: Vec<JobMemberEntry>,
+    pub breakaway_events: Vec<BreakawayEvent>,
+    pub exit_report: String,
+    pub state: OwnershipState,
+    pub created_at_utc: String,
+}
+
+impl OwnershipV1 {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        validate_text("launch_id", &self.launch_id)?;
+        validate_text("exit_report", &self.exit_report)?;
+        validate_text("created_at_utc", &self.created_at_utc)?;
+        if self.root_pid == 0 {
+            return Err(ContractError::new(
+                "invalid_value",
+                "root_pid",
+                "must be greater than zero",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> Result<String, ContractError> {
+        let mut output = String::new();
+        output.push_str("{\"schema\":");
+        write_string(&mut output, OWNERSHIP_SCHEMA);
+        output.push_str(",\"launch_id\":");
+        write_string(&mut output, &self.launch_id);
+        write!(&mut output, ",\"root_pid\":{}", self.root_pid)
+            .expect("writing JSON to a String cannot fail");
+        output.push_str(",\"job_members\":[");
+        for (i, member) in self.job_members.iter().enumerate() {
+            if i != 0 {
+                output.push(',');
+            }
+            output.push_str("{\"pid\":");
+            write!(&mut output, "{}", member.pid).expect("writing JSON to a String cannot fail");
+            output.push_str(",\"name\":");
+            write_string(&mut output, &member.name);
+            write!(
+                &mut output,
+                ",\"in_job\":{},\"breakaway\":{}}}",
+                if member.in_job { "true" } else { "false" },
+                if member.breakaway { "true" } else { "false" },
+            )
+            .expect("writing JSON to a String cannot fail");
+        }
+        output.push(']');
+        output.push_str(",\"breakaway_events\":[");
+        for (i, event) in self.breakaway_events.iter().enumerate() {
+            if i != 0 {
+                output.push(',');
+            }
+            output.push_str("{\"pid\":");
+            write!(&mut output, "{}", event.pid).expect("writing JSON to a String cannot fail");
+            output.push_str(",\"name\":");
+            write_string(&mut output, &event.name);
+            output.push_str(",\"event\":");
+            write_string(&mut output, &event.event);
+            output.push('}');
+        }
+        output.push(']');
+        output.push_str(",\"exit_report\":");
+        write_string(&mut output, &self.exit_report);
+        output.push_str(",\"state\":");
+        write_string(&mut output, self.state.as_json_str());
+        output.push_str(",\"created_at_utc\":");
+        write_string(&mut output, &self.created_at_utc);
+        output.push('}');
+        Ok(output)
+    }
+
+    pub fn from_json(json: &[u8]) -> Result<Self, ContractError> {
+        let parsed = JsonParser::new(json)?.parse_top_level()?;
+        let _obj = parsed.as_object()?;
+
+        let schema = parsed.field("schema")?.as_str()?;
+        if schema != OWNERSHIP_SCHEMA {
+            return Err(ContractError::new(
+                "schema_mismatch",
+                "schema",
+                format!("expected {}, got {}", OWNERSHIP_SCHEMA, schema),
+            ));
+        }
+
+        let get_str = |key: &str| -> Result<String, ContractError> {
+            Ok(parsed.field(key)?.as_str()?.to_owned())
+        };
+        let get_u64 = |key: &str| -> Result<u64, ContractError> {
+            let n = parsed.field(key)?.as_i64()?;
+            if n < 0 {
+                return Err(ContractError::new(
+                    "json_value",
+                    key,
+                    "must be non-negative",
+                ));
+            }
+            Ok(n as u64)
+        };
+
+        let launch_id = get_str("launch_id")?;
+        let root_pid = get_u64("root_pid")?;
+        let exit_report = get_str("exit_report")?;
+        let state = OwnershipState::from_json_str(get_str("state")?.as_str())?;
+        let created_at_utc = get_str("created_at_utc")?;
+
+        let members_value = parsed.field("job_members")?;
+        let members_array = members_value.as_array()?;
+        let mut job_members = Vec::with_capacity(members_array.len());
+        for entry in members_array {
+            job_members.push(JobMemberEntry {
+                pid: entry.field("pid")?.as_i64()? as u64,
+                name: entry.field("name")?.as_str()?.to_owned(),
+                in_job: entry.field("in_job")?.as_bool()?,
+                breakaway: entry.field("breakaway")?.as_bool()?,
+            });
+        }
+
+        let events_value = parsed.field("breakaway_events")?;
+        let events_array = events_value.as_array()?;
+        let mut breakaway_events = Vec::with_capacity(events_array.len());
+        for entry in events_array {
+            breakaway_events.push(BreakawayEvent {
+                pid: entry.field("pid")?.as_i64()? as u64,
+                name: entry.field("name")?.as_str()?.to_owned(),
+                event: entry.field("event")?.as_str()?.to_owned(),
+            });
+        }
+
+        let ownership = OwnershipV1 {
+            launch_id,
+            root_pid,
+            job_members,
+            breakaway_events,
+            exit_report,
+            state,
+            created_at_utc,
+        };
+        ownership.validate()?;
+        Ok(ownership)
     }
 }
