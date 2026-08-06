@@ -1,0 +1,39 @@
+schema=chatgpt_fix.a2p2_receipt.v1
+phase=P2
+authorization=A2-P2
+env_gate=CHATGPT_FIX_A2_P2_READONLY=1
+artifact_commit=873b880f98640e40cc43baeb8d4ea1d0a78b0eac
+ran_at_utc=2026-08-06T08:10:00Z
+
+actual_commands:
+  ChatGPT-Fix-Packer.exe inspect --live-readonly
+  ChatGPT-Fix-Packer.exe plan --live-readonly
+  ChatGPT-Fix-Manager.exe review --plan-stdin
+
+read_categories:
+  Get-AppxPackage -Name OpenAI.Codex
+  Get-AppxPackage -Name $DependencyName (from manifest PackageDependency.Name set)
+  AppxManifest.xml under selected InstallLocation
+  primary EXE metadata/bytes/SHA-256 from manifest Application.Executable
+  ChatGPT.lnk TargetPath/Arguments/WorkingDirectory/IconLocation
+
+exclusions:
+  processes_inspected=false
+  codex_home_inspected=false
+  local_state_inspected=false
+  no Get-Process/Get-CimInstance/Get-WmiObject
+  no .codex/CODEX_HOME/Packages LocalState/auth/token/session/SQLite/MCP reads
+  no Add/Remove-AppxPackage, no WindowsApps writes, no shortcut changes
+  no process start/stop, no config writes, no network, no installer, no signing
+
+result:
+  inspect_exit=0
+  plan_exit=0
+  review_exit=0
+  review_bytes_identical=true
+  plan_decision=rejected
+  plan_error=unknown_publisher (fail-closed expected: publisher CN drifted from CN=OpenAI)
+  schema=chatgpt_fix.live_inspection.v1
+  package_full_name=OpenAI.Codex_26.727.6591.0_x64__2p2nqsd0c76g0
+  publisher_id=2p2nqsd0c76g0
+  architecture=x64
