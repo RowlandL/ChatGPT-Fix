@@ -1,15 +1,38 @@
+// The launcher is a Windows GUI-subsystem binary: double-clicking the
+// shortcut must NOT flash a console window. It is invoked by the Start Menu
+// shortcut with NO arguments, in which case it launches the active baseline
+// from the default program root.
+#![windows_subsystem = "windows"]
+
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use chatgpt_fix_core::{LaunchV1, PlanDecision, ReceiptV1, SafeRelativePath, sha256_bytes};
 
 const PRODUCT_NAME: &str = "ChatGPT-Fix-Launcher";
 
+/// Default program root: `%LOCALAPPDATA%\Programs\ChatGPT-Fix`.
+fn default_program_root() -> Option<PathBuf> {
+    std::env::var("LOCALAPPDATA")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(|base| PathBuf::from(base).join("Programs").join("ChatGPT-Fix"))
+}
+
 fn main() -> ExitCode {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
 
     match arguments.as_slice() {
+        // No arguments (double-click from the shortcut): launch the active
+        // baseline from the default program root.
+        [] => match default_program_root() {
+            Some(root) => run_live_launch(&root),
+            None => {
+                eprintln!("launch_failed: LOCALAPPDATA is not set; cannot determine program root");
+                ExitCode::from(4)
+            }
+        },
         [argument] if argument == OsStr::new("--version") => {
             chatgpt_fix_core::run_version_command(PRODUCT_NAME)
         }
@@ -206,7 +229,8 @@ fn render_dry_run(plan: &chatgpt_fix_core::PlanV1) -> Result<(String, String), S
 }
 
 fn print_usage() {
-    eprintln!("Usage: {PRODUCT_NAME} --version");
+    eprintln!("Usage: {PRODUCT_NAME} [no args: launch active baseline]");
+    eprintln!("       {PRODUCT_NAME} --version");
     eprintln!("       {PRODUCT_NAME} dry-run --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} observe --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} shutdown --fixture-root <path>");

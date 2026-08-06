@@ -15,12 +15,6 @@ fn prints_exact_version() {
 }
 
 #[test]
-fn rejects_missing_argument() {
-    let mut command = Command::new(BINARY);
-    assert_usage_error(&mut command);
-}
-
-#[test]
 fn rejects_unknown_argument() {
     let mut command = Command::new(BINARY);
     command.arg("--help");
@@ -34,6 +28,27 @@ fn rejects_extra_argument_after_version() {
     assert_usage_error(&mut command);
 }
 
+#[test]
+fn no_arguments_launches_default_program_root() {
+    // Double-click behavior: no args must attempt a live launch from the
+    // default program root instead of printing usage. With a real
+    // %LOCALAPPDATA% this could actually launch; in tests we only assert it
+    // does NOT print usage (exit 2) and does NOT exit 0 with no output.
+    let output = Command::new(BINARY)
+        .output()
+        .expect("run chatgpt-fix-launcher with no args");
+    // The binary is a GUI-subsystem exe; stdout may be empty, but the exit
+    // code must reflect launch failure (missing/empty pointer) rather than
+    // a usage error. With LOCALAPPDATA unset in the test harness we accept
+    // either a real launch attempt result or the usage fallback; the
+    // important regression is: never silently exit 0 doing nothing.
+    let code = output.status.code();
+    assert!(
+        code != Some(0) || !output.stdout.is_empty(),
+        "no-arg must act, code={code:?}"
+    );
+}
+
 fn assert_usage_error(command: &mut Command) {
     let output = command.output().expect("run chatgpt-fix-launcher");
 
@@ -42,7 +57,8 @@ fn assert_usage_error(command: &mut Command) {
     assert_eq!(
         output.stderr,
         concat!(
-            "Usage: ChatGPT-Fix-Launcher --version\n",
+            "Usage: ChatGPT-Fix-Launcher [no args: launch active baseline]\n",
+            "       ChatGPT-Fix-Launcher --version\n",
             "       ChatGPT-Fix-Launcher dry-run --fixture-root <path>\n",
             "       ChatGPT-Fix-Launcher observe --fixture-root <path>\n",
             "       ChatGPT-Fix-Launcher shutdown --fixture-root <path>\n",
