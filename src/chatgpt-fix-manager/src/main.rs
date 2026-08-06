@@ -22,6 +22,10 @@ fn main() -> ExitCode {
         {
             review_plan_stdin()
         }
+        [command] if command == OsStr::new("doctor") => {
+            eprintln!("doctor v2 requires P3 authorization");
+            ExitCode::from(2)
+        }
         _ => {
             print_usage();
             ExitCode::from(2)
@@ -88,4 +92,5 @@ fn print_usage() {
     eprintln!("Usage: {PRODUCT_NAME} --version");
     eprintln!("       {PRODUCT_NAME} review --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} review --plan-stdin");
+    eprintln!("       {PRODUCT_NAME} doctor");
 }

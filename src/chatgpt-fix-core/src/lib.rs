@@ -1,6 +1,7 @@
 use std::ffi::OsStr;
 use std::process::ExitCode;
 
+mod doctor;
 mod error;
 mod fixture;
 mod json;
@@ -9,6 +10,7 @@ mod probe;
 mod schema;
 mod sha256;
 
+pub use doctor::{DoctorStatus, DoctorLevel, DoctorFinding, DoctorV2, DOCTOR_SCHEMA};
 pub use error::ContractError;
 pub use fixture::{FIXTURE_SCHEMA, FixtureError, plan_fixture};
 pub use path::{SafeRelativePath, Sha256Digest};

@@ -45,6 +45,7 @@ fn assert_usage_error(command: &mut Command) {
             "Usage: ChatGPT-Fix-Manager --version\n",
             "       ChatGPT-Fix-Manager review --fixture-root <path>\n",
             "       ChatGPT-Fix-Manager review --plan-stdin\n",
+            "       ChatGPT-Fix-Manager doctor\n",
         )
         .as_bytes(),
         "stderr: {:?}",
