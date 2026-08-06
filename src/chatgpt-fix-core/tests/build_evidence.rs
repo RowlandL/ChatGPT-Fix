@@ -489,3 +489,119 @@ fn p5_tracked_build_evidence_is_exact_and_self_consistent() {
         assert!(sbom.contains(sha256), "SBOM missing hash for {name}");
     }
 }
+
+// P6 build evidence (0.8.0)
+// ---------------------------------------------------------------------------
+
+const P6_SOURCE_COMMIT: &str = "f001e85";
+const P6_RELEASE_DIR: &str = "records/builds/0.8.0-win-x64";
+const P6_LOCK_SHA: &str = "3198d04b8256cf3848ee25e4888bf05cb1bf7215f11b0d6e50eea2e74f848599";
+
+const P6_ARTIFACTS: [(&str, u64, &str); 3] = [
+    (
+        "ChatGPT-Fix-Launcher.exe",
+        309_248,
+        "9040db4a0d96503435043c78700ba4291e06071db66d18a54eb476ac6a40e3a0",
+    ),
+    (
+        "ChatGPT-Fix-Manager.exe",
+        364_544,
+        "80906111cbadaa4f65231bd32126c4690a7019db70c9a61c721c1d6b9d48e9b9",
+    ),
+    (
+        "ChatGPT-Fix-Packer.exe",
+        498_688,
+        "00fb8c35f4cea3fc046b012cc05221983fdbd58d0b8f934fadabef93d55507f4",
+    ),
+];
+
+#[test]
+fn p6_tracked_build_evidence_is_exact_and_self_consistent() {
+    let root = repository_root();
+    let release_dir = root.join(P6_RELEASE_DIR);
+    let build_plan = fs::read(release_dir.join("build-plan.txt")).expect("read build plan");
+    let build_plan_text = std::str::from_utf8(&build_plan).expect("build plan must be UTF-8");
+
+    let expected_plan = format!(
+        "schema=chatgpt_fix.build_plan.v1\n\
+         version=0.8.0\n\
+         target=x86_64-pc-windows-msvc\n\
+         profile=release\n\
+         source_commit=f001e85\n\
+         chatgpt_fix_source_commit=f001e85\n\
+         cargo_lock_sha256={}\n\
+         rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)\n\
+         cargo=cargo 1.97.1 (c980f4866 2026-06-30)\n\
+         command=cargo build --offline --locked --workspace --release --target x86_64-pc-windows-msvc\n\
+         cargo_net_offline=true\n\
+         cargo_home=out/0.8.0/cargo-home\n\
+         cargo_target_dir=out/0.8.0/cargo-target\n\
+         artifact_dir=out/0.8.0/win-x64\n\
+         signing_status=unsigned\n",
+        P6_LOCK_SHA
+    );
+    assert_eq!(build_plan_text, expected_plan);
+    let plan_sha256 = sha256_bytes(&build_plan);
+
+    let expected_checksums = P6_ARTIFACTS
+        .iter()
+        .map(|(name, _, sha256)| format!("{sha256}  out/0.8.0/win-x64/{name}\n"))
+        .collect::<String>();
+    assert_eq!(
+        fs::read_to_string(root.join("checksums/0.8.0-win-x64.sha256"))
+            .expect("read release checksums"),
+        expected_checksums
+    );
+
+    for (name, _, artifact_sha256) in P6_ARTIFACTS {
+        let receipt = ReceiptV1 {
+            operation: "build".to_owned(),
+            status: "success".to_owned(),
+            plan_sha256: plan_sha256.clone(),
+            artifact: Some(
+                SafeRelativePath::parse(&format!("out/0.8.0/win-x64/{name}"))
+                    .expect("artifact path must be safe"),
+            ),
+            artifact_sha256: Some(
+                Sha256Digest::parse(artifact_sha256).expect("artifact hash must be valid"),
+            ),
+            source_commit: P6_SOURCE_COMMIT.to_owned(),
+            toolchain: TOOLCHAIN.to_owned(),
+            signing_status: "unsigned".to_owned(),
+        };
+        receipt.validate().expect("receipt must validate");
+        let expected = format!("{}\n", receipt.to_json().expect("receipt must serialize"));
+        let actual = fs::read_to_string(release_dir.join(format!("{name}.receipt.json")))
+            .expect("read artifact receipt");
+        assert_eq!(actual, expected, "receipt for {name}");
+    }
+
+    let licenses = fs::read_to_string(release_dir.join("DEPENDENCY-LICENSES.txt"))
+        .expect("read dependency licenses");
+    assert_eq!(
+        licenses.lines().collect::<Vec<_>>(),
+        [
+            "schema=chatgpt_fix.dependency_licenses.v1",
+            "release=0.8.0",
+            "source_commit=f001e85",
+            "third_party_cargo_packages=0",
+            "workspace_package=chatgpt-fix-core@0.8.0|license=NOASSERTION",
+            "workspace_package=chatgpt-fix-launcher@0.8.0|license=NOASSERTION",
+            "workspace_package=chatgpt-fix-manager@0.8.0|license=NOASSERTION",
+            "workspace_package=chatgpt-fix-packer@0.8.0|license=NOASSERTION",
+            "toolchain_component=rust-standard-library@1.97.1|license=Apache-2.0 OR MIT",
+            "note=Cargo.lock contains only workspace packages; no third-party Cargo crate is redistributed.",
+        ]
+    );
+
+    let sbom = fs::read_to_string(release_dir.join("sbom.spdx.json")).expect("read SPDX SBOM");
+    assert!(sbom.contains(r#""spdxVersion": "SPDX-2.3""#));
+    assert_eq!(sbom.matches(r#""SPDXID": "SPDXRef-Package-"#).count(), 5);
+    assert!(sbom.contains(r#""name": "rust-standard-library""#));
+    assert!(sbom.contains(r#""versionInfo": "1.97.1""#));
+    assert!(sbom.contains(r#""licenseDeclared": "Apache-2.0 OR MIT""#));
+    for (name, _, sha256) in P6_ARTIFACTS {
+        assert!(sbom.contains(name), "SBOM missing {name}");
+        assert!(sbom.contains(sha256), "SBOM missing hash for {name}");
+    }
+}

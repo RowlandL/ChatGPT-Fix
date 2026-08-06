@@ -1,0 +1,114 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "ChatGPT-Fix-0.8.0-win-x64",
+  "documentNamespace": "https://chatgpt-fix.local/spdx/0.8.0/f001e85",
+  "creationInfo": {
+    "created": "2026-08-06T12:00:00Z",
+    "creators": [
+      "Tool: ChatGPT-Fix-P6-offline-build"
+    ]
+  },
+  "packages": [
+    {
+      "name": "chatgpt-fix-core",
+      "SPDXID": "SPDXRef-Package-Core",
+      "versionInfo": "0.8.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION"
+    },
+    {
+      "name": "chatgpt-fix-launcher",
+      "SPDXID": "SPDXRef-Package-Launcher",
+      "versionInfo": "0.8.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION"
+    },
+    {
+      "name": "chatgpt-fix-manager",
+      "SPDXID": "SPDXRef-Package-Manager",
+      "versionInfo": "0.8.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION"
+    },
+    {
+      "name": "chatgpt-fix-packer",
+      "SPDXID": "SPDXRef-Package-Packer",
+      "versionInfo": "0.8.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION"
+    },
+    {
+      "name": "rust-standard-library",
+      "SPDXID": "SPDXRef-Package-RustStd",
+      "versionInfo": "1.97.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0 OR MIT",
+      "licenseDeclared": "Apache-2.0 OR MIT"
+    }
+  ],
+  "files": [
+    {
+      "fileName": "out/0.8.0/win-x64/ChatGPT-Fix-Launcher.exe",
+      "SPDXID": "SPDXRef-File-0",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "9040db4a0d96503435043c78700ba4291e06071db66d18a54eb476ac6a40e3a0"
+        }
+      ]
+    },
+    {
+      "fileName": "out/0.8.0/win-x64/ChatGPT-Fix-Manager.exe",
+      "SPDXID": "SPDXRef-File-1",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "80906111cbadaa4f65231bd32126c4690a7019db70c9a61c721c1d6b9d48e9b9"
+        }
+      ]
+    },
+    {
+      "fileName": "out/0.8.0/win-x64/ChatGPT-Fix-Packer.exe",
+      "SPDXID": "SPDXRef-File-2",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "00fb8c35f4cea3fc046b012cc05221983fdbd58d0b8f934fadabef93d55507f4"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-Core"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-Launcher"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-Manager"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-Packer"
+    }
+  ]
+}
