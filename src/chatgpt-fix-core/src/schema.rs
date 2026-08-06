@@ -13,6 +13,7 @@ pub const STAGING_SCHEMA: &str = "chatgpt_fix.staging.v1";
 pub const GENERATION_SCHEMA: &str = "chatgpt_fix.generation.v1";
 pub const OWNERSHIP_SCHEMA: &str = "chatgpt_fix.ownership.v1";
 pub const SHUTDOWN_SCHEMA: &str = "chatgpt_fix.shutdown.v1";
+pub const CONFIG_PROPOSAL_SCHEMA: &str = "chatgpt_fix.config_proposal.v1";
 
 /// The ownership observation state machine (report-only).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -1591,5 +1592,191 @@ impl ShutdownV1 {
         };
         shutdown.validate()?;
         Ok(shutdown)
+    }
+}
+
+/// The effective-config scope for a proposal.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ConfigScope {
+    /// MCP server enablement configuration.
+    Mcp,
+    /// `CODEX_HOME` state-root redirection.
+    CodexHome,
+    /// History persistence/max-bytes configuration.
+    History,
+}
+
+impl ConfigScope {
+    pub(crate) fn as_json_str(self) -> &'static str {
+        match self {
+            Self::Mcp => "mcp",
+            Self::CodexHome => "codex_home",
+            Self::History => "history",
+        }
+    }
+
+    pub(crate) fn from_json_str(s: &str) -> Result<Self, ContractError> {
+        match s {
+            "mcp" => Ok(Self::Mcp),
+            "codex_home" => Ok(Self::CodexHome),
+            "history" => Ok(Self::History),
+            other => Err(ContractError::new(
+                "invalid_value",
+                "scope",
+                format!("expected 'mcp', 'codex_home', or 'history', got '{other}'"),
+            )),
+        }
+    }
+}
+
+/// Where a proposal may be applied.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ConfigApplyMode {
+    /// Apply to an empty canary profile (verification only).
+    Canary,
+    /// Apply to the real effective configuration (P8+ only).
+    Real,
+}
+
+impl ConfigApplyMode {
+    pub(crate) fn as_json_str(self) -> &'static str {
+        match self {
+            Self::Canary => "canary",
+            Self::Real => "real",
+        }
+    }
+
+    pub(crate) fn from_json_str(s: &str) -> Result<Self, ContractError> {
+        match s {
+            "canary" => Ok(Self::Canary),
+            "real" => Ok(Self::Real),
+            other => Err(ContractError::new(
+                "invalid_value",
+                "apply_mode",
+                format!("expected 'canary' or 'real', got '{other}'"),
+            )),
+        }
+    }
+}
+
+/// The config proposal state machine: proposed -> applied, or rolled_back.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ConfigProposalState {
+    Proposed,
+    Applied,
+    RolledBack,
+}
+
+impl ConfigProposalState {
+    fn as_json_str(self) -> &'static str {
+        match self {
+            Self::Proposed => "proposed",
+            Self::Applied => "applied",
+            Self::RolledBack => "rolled_back",
+        }
+    }
+
+    fn from_json_str(s: &str) -> Result<Self, ContractError> {
+        match s {
+            "proposed" => Ok(Self::Proposed),
+            "applied" => Ok(Self::Applied),
+            "rolled_back" => Ok(Self::RolledBack),
+            other => Err(ContractError::new(
+                "invalid_value",
+                "state",
+                format!("expected 'proposed', 'applied', or 'rolled_back', got '{other}'"),
+            )),
+        }
+    }
+}
+
+/// The effective-config proposal receipt (`chatgpt_fix.config_proposal.v1`).
+///
+/// Produced by `ChatGPT-Fix-Manager config-plan --scope <mcp|codex_home|history>`.
+/// Applying is only allowed on an empty canary profile (A6 scope); every apply
+/// binds an independent backup and rollback. Auth/token/cookie content is never
+/// part of a proposal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfigProposalV1 {
+    pub proposal_id: String,
+    pub scope: ConfigScope,
+    pub current_digest: String,
+    pub proposed_digest: String,
+    pub backup_path: String,
+    pub apply_mode: ConfigApplyMode,
+    pub state: ConfigProposalState,
+    pub created_at_utc: String,
+}
+
+impl ConfigProposalV1 {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        validate_text("proposal_id", &self.proposal_id)?;
+        validate_text("current_digest", &self.current_digest)?;
+        validate_text("proposed_digest", &self.proposed_digest)?;
+        validate_text("backup_path", &self.backup_path)?;
+        validate_text("created_at_utc", &self.created_at_utc)?;
+        if self.current_digest.is_empty() || self.proposed_digest.is_empty() {
+            return Err(ContractError::new(
+                "invalid_value",
+                "digest",
+                "digests must not be empty",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> Result<String, ContractError> {
+        let mut output = String::new();
+        output.push_str("{\"schema\":");
+        write_string(&mut output, CONFIG_PROPOSAL_SCHEMA);
+        output.push_str(",\"proposal_id\":");
+        write_string(&mut output, &self.proposal_id);
+        output.push_str(",\"scope\":");
+        write_string(&mut output, self.scope.as_json_str());
+        output.push_str(",\"current_digest\":");
+        write_string(&mut output, &self.current_digest);
+        output.push_str(",\"proposed_digest\":");
+        write_string(&mut output, &self.proposed_digest);
+        output.push_str(",\"backup_path\":");
+        write_string(&mut output, &self.backup_path);
+        output.push_str(",\"apply_mode\":");
+        write_string(&mut output, self.apply_mode.as_json_str());
+        output.push_str(",\"state\":");
+        write_string(&mut output, self.state.as_json_str());
+        output.push_str(",\"created_at_utc\":");
+        write_string(&mut output, &self.created_at_utc);
+        output.push('}');
+        Ok(output)
+    }
+
+    pub fn from_json(json: &[u8]) -> Result<Self, ContractError> {
+        let parsed = JsonParser::new(json)?.parse_top_level()?;
+        let _obj = parsed.as_object()?;
+
+        let schema = parsed.field("schema")?.as_str()?;
+        if schema != CONFIG_PROPOSAL_SCHEMA {
+            return Err(ContractError::new(
+                "schema_mismatch",
+                "schema",
+                format!("expected {}, got {}", CONFIG_PROPOSAL_SCHEMA, schema),
+            ));
+        }
+
+        let get_str = |key: &str| -> Result<String, ContractError> {
+            Ok(parsed.field(key)?.as_str()?.to_owned())
+        };
+
+        let proposal = ConfigProposalV1 {
+            proposal_id: get_str("proposal_id")?,
+            scope: ConfigScope::from_json_str(get_str("scope")?.as_str())?,
+            current_digest: get_str("current_digest")?,
+            proposed_digest: get_str("proposed_digest")?,
+            backup_path: get_str("backup_path")?,
+            apply_mode: ConfigApplyMode::from_json_str(get_str("apply_mode")?.as_str())?,
+            state: ConfigProposalState::from_json_str(get_str("state")?.as_str())?,
+            created_at_utc: get_str("created_at_utc")?,
+        };
+        proposal.validate()?;
+        Ok(proposal)
     }
 }

@@ -124,6 +124,9 @@ fn rejects_live_style_arguments_before_path_access() {
             "       ChatGPT-Fix-Manager review --plan-stdin\n",
             "       ChatGPT-Fix-Manager activate --baseline <root> [--smoke]\n",
             "       ChatGPT-Fix-Manager rollback\n",
+            "       ChatGPT-Fix-Manager config-plan --scope <mcp|codex_home|history>\n",
+            "       ChatGPT-Fix-Manager config-apply --proposal <path> --canary <root>\n",
+            "       ChatGPT-Fix-Manager config-rollback --proposal <path>\n",
             "       ChatGPT-Fix-Manager doctor\n",
         )
         .as_bytes()

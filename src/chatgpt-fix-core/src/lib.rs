@@ -1,6 +1,7 @@
 use std::ffi::OsStr;
 use std::process::ExitCode;
 
+mod config;
 mod doctor;
 mod error;
 mod fixture;
@@ -14,6 +15,7 @@ mod sha256;
 mod shutdown;
 mod staging;
 
+pub use config::{config_apply, config_plan, config_rollback, parse_config_proposal};
 pub use doctor::{DOCTOR_SCHEMA, DoctorFinding, DoctorLevel, DoctorStatus, DoctorV2};
 pub use error::ContractError;
 pub use fixture::{FIXTURE_SCHEMA, FixtureError, plan_fixture};
@@ -25,12 +27,13 @@ pub use probe::{
     plan_probe_json,
 };
 pub use schema::{
-    BASELINE_SCHEMA, BaselineV2, BreakawayEvent, GENERATION_SCHEMA, GenerationState, GenerationV1,
-    JobMemberEntry, LAUNCH_SCHEMA, LIVE_INSPECTION_SCHEMA, LaunchV1, LiveInspectionV1,
-    OWNERSHIP_SCHEMA, OwnershipState, OwnershipV1, PLAN_SCHEMA, PlanAction, PlanActionKind,
-    PlanDecision, PlanV1, RECEIPT_SCHEMA, ReceiptV1, SHUTDOWN_SCHEMA, STAGING_SCHEMA,
-    ShortcutBackup, ShutdownMode, ShutdownState, ShutdownV1, StagingFileEntry, StagingState,
-    StagingV1,
+    BASELINE_SCHEMA, BaselineV2, BreakawayEvent, CONFIG_PROPOSAL_SCHEMA, ConfigApplyMode,
+    ConfigProposalState, ConfigProposalV1, ConfigScope, GENERATION_SCHEMA, GenerationState,
+    GenerationV1, JobMemberEntry, LAUNCH_SCHEMA, LIVE_INSPECTION_SCHEMA, LaunchV1,
+    LiveInspectionV1, OWNERSHIP_SCHEMA, OwnershipState, OwnershipV1, PLAN_SCHEMA, PlanAction,
+    PlanActionKind, PlanDecision, PlanV1, RECEIPT_SCHEMA, ReceiptV1, SHUTDOWN_SCHEMA,
+    STAGING_SCHEMA, ShortcutBackup, ShutdownMode, ShutdownState, ShutdownV1, StagingFileEntry,
+    StagingState, StagingV1,
 };
 pub use sha256::sha256_bytes;
 pub use shutdown::shutdown_process_tree;
