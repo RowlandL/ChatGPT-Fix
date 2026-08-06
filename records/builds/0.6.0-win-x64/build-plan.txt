@@ -1,0 +1,15 @@
+schema=chatgpt_fix.build_plan.v1
+version=0.6.0
+target=x86_64-pc-windows-msvc
+profile=release
+source_commit=ddba3c16a0188a5a21c14cad5320d653a827d50f
+chatgpt_fix_source_commit=ddba3c16a0188a5a21c14cad5320d653a827d50f
+cargo_lock_sha256=2389d3f8f8bba976e1de3b71abf97b9168043b69bf42a094dec744bf187128d1
+rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo=cargo 1.97.1 (c980f4866 2026-06-30)
+command=cargo build --offline --locked --workspace --release --target x86_64-pc-windows-msvc
+cargo_net_offline=true
+cargo_home=out/0.6.0/cargo-home
+cargo_target_dir=out/0.6.0/cargo-target
+artifact_dir=out/0.6.0/win-x64
+signing_status=unsigned
