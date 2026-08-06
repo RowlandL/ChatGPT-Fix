@@ -1,9 +1,9 @@
 use std::error::Error;
 
 use chatgpt_fix_core::{
-    BASELINE_SCHEMA, BaselineV2, ContractError, LAUNCH_SCHEMA, LaunchV1, LIVE_INSPECTION_SCHEMA,
-    LiveInspectionV1, PLAN_SCHEMA, PlanAction, PlanActionKind, PlanDecision, PlanV1, RECEIPT_SCHEMA,
-    ReceiptV1, SafeRelativePath, Sha256Digest,
+    BASELINE_SCHEMA, BaselineV2, ContractError, LAUNCH_SCHEMA, LIVE_INSPECTION_SCHEMA, LaunchV1,
+    LiveInspectionV1, PLAN_SCHEMA, PlanAction, PlanActionKind, PlanDecision, PlanV1,
+    RECEIPT_SCHEMA, ReceiptV1, SafeRelativePath, Sha256Digest,
 };
 
 fn path(value: &str) -> SafeRelativePath {

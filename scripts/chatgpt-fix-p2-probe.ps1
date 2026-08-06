@@ -1,27 +1,28 @@
-<#
-.SYNOPSIS
-    ChatGPT-Fix P2 bounded package inspection probe.
-.DESCRIPTION
-    In Live mode, reads the bounded live package state (Get-AppxPackage,
-    manifest, primary EXE, shortcut) and outputs a single canonical
-    LiveInspectionV1 JSON document to stdout.
-    In Fixture mode, reads synthetic snapshot files from $FixtureRoot
-    and produces the same canonical JSON.
+# .SYNOPSIS
+#     ChatGPT-Fix P2 bounded package inspection probe.
+# .DESCRIPTION
+#     In Live mode, reads the bounded live package state (Get-AppxPackage,
+#     manifest, primary EXE, shortcut) and outputs a single canonical
+#     LiveInspectionV1 JSON document to stdout.
+#     In Fixture mode, reads synthetic snapshot files from $FixtureRoot
+#     and produces the same canonical JSON.
+#
+#     This script must NOT contain:
+#     - Mutation cmdlets
+#     - Process cmdlets
+#     - Network cmdlets
+#     - Any Get-AppxPackage without -Name
+#     - Any Get-AppxPackage with -AllUsers
+# .PARAMETER Mode
+#     'Live' for live package inspection; 'Fixture' for synthetic testing.
+# .PARAMETER FixtureRoot
+#     Required when Mode is 'Fixture'. Path to the fixture directory.
+# .EXAMPLE
+#     Invoke-ChatGptFixP2Probe -Mode Live
+#     Invoke-ChatGptFixP2Probe -Mode Fixture -FixtureRoot "tests/live-fixtures/valid-current"
 
-    This script must NOT contain:
-    - Mutation cmdlets
-    - Process cmdlets
-    - Network cmdlets
-    - Any Get-AppxPackage without -Name
-    - Any Get-AppxPackage with -AllUsers
-.PARAMETER Mode
-    'Live' for live package inspection; 'Fixture' for synthetic testing.
-.PARAMETER FixtureRoot
-    Required when Mode is 'Fixture'. Path to the fixture directory.
-.EXAMPLE
-    Invoke-ChatGptFixP2Probe -Mode Live
-    Invoke-ChatGptFixP2Probe -Mode Fixture -FixtureRoot "tests/live-fixtures/valid-current"
-#>
+# PowerShell 7 default: suppress ANSI escape sequences in stdout.
+$PSStyle.OutputRendering = 'PlainText'
 
 function Invoke-ChatGptFixP2Probe {
     param(
@@ -58,26 +59,26 @@ function Invoke-LiveProbe {
     $manifestXml = [System.Xml.XmlDocument]::new()
     $manifestXml.Load($manifestPath)
     $ns = @{m = 'http://schemas.microsoft.com/appx/manifest/foundation/windows10'}
-    $executableNode = $manifestXml.SelectSingleNode('//m:Application/m:Executable', $ns)
-    $executableRel = if ($executableNode) { $executableNode.InnerText.Trim() } else { '' }
+    $executableNode = Select-Xml -Xml $manifestXml -XPath '//m:Application' -Namespace $ns
+    $executableRel = if ($executableNode) { $executableNode.Node.GetAttribute('Executable').Trim() } else { '' }
     $executablePath = Join-Path $package.InstallLocation $executableRel
     $executableBytes = [System.IO.File]::ReadAllBytes($executablePath)
     $executableSha256 = Compute-Sha256Bytes $executableBytes
 
     # Manifest dependencies.
     $dependencies = @()
-    $depNodes = $manifestXml.SelectNodes('//m:PackageDependency', $ns)
+    $depNodes = Select-Xml -Xml $manifestXml -XPath '//m:PackageDependency' -Namespace $ns
     foreach ($dep in $depNodes) {
-        $depName = $dep.GetAttribute('Name')
-        $depPublisher = $dep.GetAttribute('Publisher')
-        $depMinVer = $dep.GetAttribute('MinVersion')
+        $depName = $dep.Node.GetAttribute('Name')
+        $depPublisher = $dep.Node.GetAttribute('Publisher')
+        $depMinVer = $dep.Node.GetAttribute('MinVersion')
         # Verify each dependency is installed for current user.
         $resolved = Get-AppxPackage -Name $depName -ErrorAction SilentlyContinue
         if (-not $resolved) {
             Write-Error "Dependency not found: $depName"
             exit 1
         }
-        $dependencies += "$depName`_$depMinVer`_x64__$depPublisher"
+        $dependencies += "${depName}_${depMinVer}_x64__${depPublisher}"
     }
 
     # Shortcut.
@@ -138,7 +139,7 @@ function Invoke-FixtureProbe {
 function Compute-Sha256Bytes {
     param([byte[]]$Bytes)
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    $hash = $sha256.ComputeHash($Bytes)
+    $hash = $sha256.ComputeHash([byte[]]$Bytes)
     return ($hash | ForEach-Object { $_.ToString('x2') }) -join ''
 }
 
@@ -155,14 +156,6 @@ function Get-ShorcutProperties {
 }
 
 # ---------------------------------------------------------------------------
-# Entry point when invoked via stdin from Packer
-# ---------------------------------------------------------------------------
-if ($MyInvocation.InvocationName -eq '.') {
-    # Dot-sourced: the Packer piped this script into pwsh stdin with
-    # the trailing invocation. The caller is responsible for calling
-    # Invoke-ChatGptFixP2Probe with the desired parameters.
-} elseif ($MyInvocation.Line -match 'Invoke-ChatGptFixP2Probe') {
-    # Called directly with -Mode argument.
-    $result = Invoke-ChatGptFixP2Probe @args
-    $result | ConvertTo-Json -Compress -Depth 10
-}
+# Entry point — removed. The Packer appends the invocation with
+# -Mode Live and ConvertTo-Json via LIVE_INVOCATION.
+# Call directly: Invoke-ChatGptFixP2Probe -Mode Live | ConvertTo-Json -Compress -Depth 10

@@ -21,8 +21,8 @@ fn load_fixture(name: &str) -> LiveInspectionV1 {
         "src/chatgpt-fix-core/tests/live-fixtures/{}/probe-output.json",
         name
     ));
-    let bytes = std::fs::read(&path)
-        .unwrap_or_else(|e| panic!("failed to read fixture {}: {}", name, e));
+    let bytes =
+        std::fs::read(&path).unwrap_or_else(|e| panic!("failed to read fixture {}: {}", name, e));
     LiveInspectionV1::from_json(&bytes)
         .unwrap_or_else(|e| panic!("failed to parse fixture {}: {}", name, e))
 }
@@ -38,9 +38,9 @@ fn all_six_fixtures_exist_and_parse() {
         "reparse-path",
     ] {
         let fixture = load_fixture(name);
-        fixture.validate().unwrap_or_else(|e| {
-            panic!("fixture {} failed validation: {}", name, e)
-        });
+        fixture
+            .validate()
+            .unwrap_or_else(|e| panic!("fixture {} failed validation: {}", name, e));
         assert_eq!(
             fixture.probe_source, "fixture",
             "fixture {} must have probe_source=fixture",
@@ -92,7 +92,11 @@ fn reparse_path_has_install_location_in_virtual_store() {
 }
 
 fn probe_script_path() -> String {
-    project_root().join("scripts/chatgpt-fix-p2-probe.ps1").to_str().unwrap().to_owned()
+    project_root()
+        .join("scripts/chatgpt-fix-p2-probe.ps1")
+        .to_str()
+        .unwrap()
+        .to_owned()
 }
 
 #[test]
@@ -155,6 +159,7 @@ fn probe_script_no_prohibited_cmdlets() {
 }
 
 #[test]
+#[allow(clippy::needless_borrow)]
 fn probe_script_ast_analysis_via_powershell() {
     let script_path = probe_script_path();
 
@@ -206,7 +211,13 @@ if ($errors.Count -gt 0) {
 "#;
 
     let output = Command::new("pwsh.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &ast_check, &script_path])
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &ast_check,
+            &script_path,
+        ])
         .output()
         .expect("failed to execute PowerShell AST check");
 
@@ -226,8 +237,8 @@ if ($errors.Count -gt 0) {
 fn fixture_mode_roundtrip_via_powershell() {
     // Test that Invoke-ChatGptFixP2Probe -Mode Fixture reads the fixture
     // and outputs valid JSON.
-    let fixture_root = project_root()
-        .join("src/chatgpt-fix-core/tests/live-fixtures/valid-current");
+    let fixture_root =
+        project_root().join("src/chatgpt-fix-core/tests/live-fixtures/valid-current");
     let fixture_root_str = fixture_root.to_str().unwrap().to_owned();
     let script_path = probe_script_path();
 
@@ -257,5 +268,8 @@ fn fixture_mode_roundtrip_via_powershell() {
         .unwrap_or_else(|e| panic!("failed to parse fixture output: {}\nJSON: {}", e, stdout));
     parsed.validate().unwrap();
     assert_eq!(parsed.probe_source, "fixture");
-    assert_eq!(parsed.package_full_name, "OpenAI.Codex_1.2.3.0_x64__2p2nqsd0c76g0");
+    assert_eq!(
+        parsed.package_full_name,
+        "OpenAI.Codex_1.2.3.0_x64__2p2nqsd0c76g0"
+    );
 }

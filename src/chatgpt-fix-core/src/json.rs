@@ -80,7 +80,10 @@ impl<'a> JsonParser<'a> {
         let value = self.parse_value(0)?;
         self.skip_whitespace();
         if self.pos < self.length {
-            return Err(json_error("json_trailing", "trailing data after top-level value"));
+            return Err(json_error(
+                "json_trailing",
+                "trailing data after top-level value",
+            ));
         }
         Ok(value)
     }
@@ -109,7 +112,10 @@ impl<'a> JsonParser<'a> {
                 self.pos,
                 format!("unexpected byte {:02x} ('{}')", c, c as char),
             )),
-            None => Err(json_error("json_eof", "unexpected end of input while parsing value")),
+            None => Err(json_error(
+                "json_eof",
+                "unexpected end of input while parsing value",
+            )),
         }
     }
 
@@ -124,7 +130,10 @@ impl<'a> JsonParser<'a> {
                 b'"' => return Ok(result),
                 b'\\' => result.push(self.parse_escape()?),
                 b'\x00'..=b'\x1f' => {
-                    return Err(json_error("json_control", "unescaped control character in string"));
+                    return Err(json_error(
+                        "json_control",
+                        "unescaped control character in string",
+                    ));
                 }
                 b => {
                     // UTF-8 multi-byte: we already validated the input is
@@ -253,7 +262,10 @@ impl<'a> JsonParser<'a> {
             }
             self.pos += 1; // skip '.'
             if self.pos >= self.length || !self.input[self.pos].is_ascii_digit() {
-                return Err(json_error("json_number", "expected digit after decimal point"));
+                return Err(json_error(
+                    "json_number",
+                    "expected digit after decimal point",
+                ));
             }
             while self.pos < self.length && self.input[self.pos].is_ascii_digit() {
                 self.pos += 1;
@@ -265,24 +277,40 @@ impl<'a> JsonParser<'a> {
                 .map_err(|_| json_error("json_number", "invalid UTF-8 in number"))?;
             // Reject trailing zeros after decimal: e.g. "1.0", "1.10"
             if s.ends_with('0') {
-                return Err(json_error("json_number", "non-canonical number: trailing zero in fraction"));
+                return Err(json_error(
+                    "json_number",
+                    "non-canonical number: trailing zero in fraction",
+                ));
             }
             if is_negative {
-                return Err(json_error("json_number", "non-canonical number: negative float"));
+                return Err(json_error(
+                    "json_number",
+                    "non-canonical number: negative float",
+                ));
             }
             // Parse as float and check if it's integer-representable.
             // For our use case, reject floats entirely.
-            return Err(json_error("json_number", "floating-point numbers are not allowed"));
+            return Err(json_error(
+                "json_number",
+                "floating-point numbers are not allowed",
+            ));
         }
 
         // Exponent part.
-        if self.pos < self.length && (self.input[self.pos] == b'e' || self.input[self.pos] == b'E') {
-            return Err(json_error("json_number", "exponent notation is not allowed"));
+        if self.pos < self.length && (self.input[self.pos] == b'e' || self.input[self.pos] == b'E')
+        {
+            return Err(json_error(
+                "json_number",
+                "exponent notation is not allowed",
+            ));
         }
 
         // Validate leading zero.
         if has_leading_zero && self.pos > start + if is_negative { 2 } else { 1 } {
-            return Err(json_error("json_number", "non-canonical number: leading zero"));
+            return Err(json_error(
+                "json_number",
+                "non-canonical number: leading zero",
+            ));
         }
 
         // Check for -0 (reject).
@@ -299,9 +327,9 @@ impl<'a> JsonParser<'a> {
             return Err(json_error("json_number", "non-canonical number: -0"));
         }
 
-        let value: i64 = s.parse().map_err(|_| {
-            json_error("json_number", format!("number out of range: {}", s))
-        })?;
+        let value: i64 = s
+            .parse()
+            .map_err(|_| json_error("json_number", format!("number out of range: {}", s)))?;
         Ok(JsonValue::I64(value))
     }
 
@@ -326,7 +354,10 @@ impl<'a> JsonParser<'a> {
         if self.pos < self.length {
             let next = self.input[self.pos];
             if next.is_ascii_alphanumeric() || next == b'_' {
-                return Err(json_error("json_syntax", "literal followed by identifier character"));
+                return Err(json_error(
+                    "json_syntax",
+                    "literal followed by identifier character",
+                ));
             }
         }
         Ok(value)
@@ -377,7 +408,10 @@ impl<'a> JsonParser<'a> {
             self.require_not_eof("unexpected end of input in object")?;
             let key = self.parse_string()?;
             if !seen_keys.insert(key.clone()) {
-                return Err(json_error("json_duplicate_key", format!("duplicate key: {}", key)));
+                return Err(json_error(
+                    "json_duplicate_key",
+                    format!("duplicate key: {}", key),
+                ));
             }
             self.skip_whitespace();
             self.expect_byte(b':', "expected ':' after object key")?;
@@ -454,7 +488,10 @@ impl JsonValue {
     pub(crate) fn as_str(&self) -> Result<&str, ContractError> {
         match self {
             JsonValue::Str(s) => Ok(s.as_str()),
-            other => Err(json_error("json_type", format!("expected string, got {:?}", other))),
+            other => Err(json_error(
+                "json_type",
+                format!("expected string, got {:?}", other),
+            )),
         }
     }
 
@@ -462,7 +499,10 @@ impl JsonValue {
     pub(crate) fn as_i64(&self) -> Result<i64, ContractError> {
         match self {
             JsonValue::I64(n) => Ok(*n),
-            other => Err(json_error("json_type", format!("expected integer, got {:?}", other))),
+            other => Err(json_error(
+                "json_type",
+                format!("expected integer, got {:?}", other),
+            )),
         }
     }
 
@@ -470,7 +510,10 @@ impl JsonValue {
     pub(crate) fn as_bool(&self) -> Result<bool, ContractError> {
         match self {
             JsonValue::Bool(b) => Ok(*b),
-            other => Err(json_error("json_type", format!("expected boolean, got {:?}", other))),
+            other => Err(json_error(
+                "json_type",
+                format!("expected boolean, got {:?}", other),
+            )),
         }
     }
 
@@ -478,7 +521,10 @@ impl JsonValue {
     pub(crate) fn as_array(&self) -> Result<&[JsonValue], ContractError> {
         match self {
             JsonValue::Array(arr) => Ok(arr.as_slice()),
-            other => Err(json_error("json_type", format!("expected array, got {:?}", other))),
+            other => Err(json_error(
+                "json_type",
+                format!("expected array, got {:?}", other),
+            )),
         }
     }
 
@@ -486,7 +532,10 @@ impl JsonValue {
     pub(crate) fn as_object(&self) -> Result<&[(String, JsonValue)], ContractError> {
         match self {
             JsonValue::Object(obj) => Ok(obj.as_slice()),
-            other => Err(json_error("json_type", format!("expected object, got {:?}", other))),
+            other => Err(json_error(
+                "json_type",
+                format!("expected object, got {:?}", other),
+            )),
         }
     }
 
@@ -501,9 +550,9 @@ impl JsonValue {
 
     /// Get an optional field from an object.
     pub(crate) fn field_opt(&self, key: &str) -> Option<&JsonValue> {
-        self.as_object().ok().and_then(|obj| {
-            obj.iter().find(|(k, _)| k == key).map(|(_, v)| v)
-        })
+        self.as_object()
+            .ok()
+            .and_then(|obj| obj.iter().find(|(k, _)| k == key).map(|(_, v)| v))
     }
 }
 
@@ -543,7 +592,10 @@ mod tests {
             JsonValue::Bool(true),
         );
         assert_eq!(
-            JsonParser::new(b"false").unwrap().parse_top_level().unwrap(),
+            JsonParser::new(b"false")
+                .unwrap()
+                .parse_top_level()
+                .unwrap(),
             JsonValue::Bool(false),
         );
     }
@@ -563,7 +615,10 @@ mod tests {
             JsonValue::I64(0),
         );
         assert_eq!(
-            JsonParser::new(b"9223372036854775807").unwrap().parse_top_level().unwrap(),
+            JsonParser::new(b"9223372036854775807")
+                .unwrap()
+                .parse_top_level()
+                .unwrap(),
             JsonValue::I64(9223372036854775807),
         );
     }
@@ -571,33 +626,55 @@ mod tests {
     #[test]
     fn parse_string() {
         assert_eq!(
-            JsonParser::new(b"\"hello\"").unwrap().parse_top_level().unwrap(),
+            JsonParser::new(b"\"hello\"")
+                .unwrap()
+                .parse_top_level()
+                .unwrap(),
             JsonValue::Str("hello".to_owned()),
         );
         assert_eq!(
-            JsonParser::new(b"\"esc\\\"ape\"").unwrap().parse_top_level().unwrap(),
+            JsonParser::new(b"\"esc\\\"ape\"")
+                .unwrap()
+                .parse_top_level()
+                .unwrap(),
             JsonValue::Str("esc\"ape".to_owned()),
         );
         assert_eq!(
-            JsonParser::new(b"\"\\u0048\\u0069\"").unwrap().parse_top_level().unwrap(),
+            JsonParser::new(b"\"\\u0048\\u0069\"")
+                .unwrap()
+                .parse_top_level()
+                .unwrap(),
             JsonValue::Str("Hi".to_owned()),
         );
         assert_eq!(
-            JsonParser::new(b"\"\\n\\t\\r\"").unwrap().parse_top_level().unwrap(),
+            JsonParser::new(b"\"\\n\\t\\r\"")
+                .unwrap()
+                .parse_top_level()
+                .unwrap(),
             JsonValue::Str("\n\t\r".to_owned()),
         );
         assert_eq!(
-            JsonParser::new(b"\"\\u03b1\"").unwrap().parse_top_level().unwrap(),
+            JsonParser::new(b"\"\\u03b1\"")
+                .unwrap()
+                .parse_top_level()
+                .unwrap(),
             JsonValue::Str("α".to_owned()),
         );
     }
 
     #[test]
     fn parse_array() {
-        let parsed = JsonParser::new(b"[1,2,3]").unwrap().parse_top_level().unwrap();
+        let parsed = JsonParser::new(b"[1,2,3]")
+            .unwrap()
+            .parse_top_level()
+            .unwrap();
         assert_eq!(
             parsed,
-            JsonValue::Array(vec![JsonValue::I64(1), JsonValue::I64(2), JsonValue::I64(3)]),
+            JsonValue::Array(vec![
+                JsonValue::I64(1),
+                JsonValue::I64(2),
+                JsonValue::I64(3)
+            ]),
         );
     }
 
@@ -609,7 +686,10 @@ mod tests {
 
     #[test]
     fn parse_nested_array() {
-        let parsed = JsonParser::new(b"[[1,[]],2]").unwrap().parse_top_level().unwrap();
+        let parsed = JsonParser::new(b"[[1,[]],2]")
+            .unwrap()
+            .parse_top_level()
+            .unwrap();
         assert_eq!(
             parsed,
             JsonValue::Array(vec![
@@ -656,7 +736,10 @@ mod tests {
 
     #[test]
     fn reject_trailing_data() {
-        let err = JsonParser::new(b"null true").unwrap().parse_top_level().unwrap_err();
+        let err = JsonParser::new(b"null true")
+            .unwrap()
+            .parse_top_level()
+            .unwrap_err();
         assert_eq!(err.code, "json_trailing");
     }
 
@@ -671,37 +754,55 @@ mod tests {
 
     #[test]
     fn reject_leading_zero() {
-        let err = JsonParser::new(b"01").unwrap().parse_top_level().unwrap_err();
+        let err = JsonParser::new(b"01")
+            .unwrap()
+            .parse_top_level()
+            .unwrap_err();
         assert_eq!(err.code, "json_number");
     }
 
     #[test]
     fn reject_negative_zero() {
-        let err = JsonParser::new(b"-0").unwrap().parse_top_level().unwrap_err();
+        let err = JsonParser::new(b"-0")
+            .unwrap()
+            .parse_top_level()
+            .unwrap_err();
         assert_eq!(err.code, "json_number");
     }
 
     #[test]
     fn reject_float() {
-        let err = JsonParser::new(b"1.5").unwrap().parse_top_level().unwrap_err();
+        let err = JsonParser::new(b"1.5")
+            .unwrap()
+            .parse_top_level()
+            .unwrap_err();
         assert_eq!(err.code, "json_number");
     }
 
     #[test]
     fn reject_exponent() {
-        let err = JsonParser::new(b"1e10").unwrap().parse_top_level().unwrap_err();
+        let err = JsonParser::new(b"1e10")
+            .unwrap()
+            .parse_top_level()
+            .unwrap_err();
         assert_eq!(err.code, "json_number");
     }
 
     #[test]
     fn reject_control_char_in_string() {
-        let err = JsonParser::new(b"\"hello\n\"").unwrap().parse_top_level().unwrap_err();
+        let err = JsonParser::new(b"\"hello\n\"")
+            .unwrap()
+            .parse_top_level()
+            .unwrap_err();
         assert_eq!(err.code, "json_control");
     }
 
     #[test]
     fn reject_invalid_escape() {
-        let err = JsonParser::new(b"\"hello\\x\"").unwrap().parse_top_level().unwrap_err();
+        let err = JsonParser::new(b"\"hello\\x\"")
+            .unwrap()
+            .parse_top_level()
+            .unwrap_err();
         assert_eq!(err.code, "json_escape");
     }
 
@@ -716,7 +817,10 @@ mod tests {
 
     #[test]
     fn reject_literal_followed_by_identifier() {
-        let err = JsonParser::new(b"nullx").unwrap().parse_top_level().unwrap_err();
+        let err = JsonParser::new(b"nullx")
+            .unwrap()
+            .parse_top_level()
+            .unwrap_err();
         assert_eq!(err.code, "json_syntax");
     }
 
@@ -732,7 +836,10 @@ mod tests {
 
     #[test]
     fn reject_trailing_comma_in_array() {
-        let err = JsonParser::new(b"[1,]").unwrap().parse_top_level().unwrap_err();
+        let err = JsonParser::new(b"[1,]")
+            .unwrap()
+            .parse_top_level()
+            .unwrap_err();
         assert_eq!(err.code, "json_syntax");
     }
 

@@ -161,8 +161,7 @@ fn rejects_live_style_arguments_before_path_access() {
 }
 
 fn probe_fixtures_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../src/chatgpt-fix-core/tests/live-fixtures")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../src/chatgpt-fix-core/tests/live-fixtures")
 }
 
 fn probe_fixture(name: &str) -> PathBuf {
@@ -284,7 +283,10 @@ fn plan_probe_json_rejects_publisher_mismatch() {
     assert_eq!(output.status.code(), Some(0), "stderr: {:?}", output.stderr);
     let plan_json = String::from_utf8(output.stdout).unwrap();
     assert!(plan_json.contains("rejected"), "plan must be rejected");
-    assert!(plan_json.contains("unknown_publisher"), "plan must mention unknown_publisher");
+    assert!(
+        plan_json.contains("unknown_publisher"),
+        "plan must mention unknown_publisher"
+    );
     assert!(output.stderr.is_empty(), "stderr: {:?}", output.stderr);
 }
 
@@ -314,5 +316,9 @@ fn packer_rejects_live_readonly_without_authorization() {
         "must reject without A2-P2, stderr: {:?}",
         output_plan.stderr
     );
-    assert!(output_plan.stdout.is_empty(), "stdout: {:?}", output_plan.stdout);
+    assert!(
+        output_plan.stdout.is_empty(),
+        "stdout: {:?}",
+        output_plan.stdout
+    );
 }

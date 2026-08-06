@@ -137,10 +137,7 @@ fn doctor_requires_p3_authorization() {
 
     assert_eq!(output.status.code(), Some(2), "stderr: {:?}", output.stderr);
     assert!(output.stdout.is_empty());
-    assert_eq!(
-        output.stderr,
-        b"doctor v2 requires P3 authorization\n"
-    );
+    assert_eq!(output.stderr, b"doctor v2 requires P3 authorization\n");
 }
 
 #[test]

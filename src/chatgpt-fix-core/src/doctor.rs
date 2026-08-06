@@ -1,5 +1,5 @@
-use crate::json::write_string;
 use crate::ContractError;
+use crate::json::write_string;
 
 pub const DOCTOR_SCHEMA: &str = "chatgpt_fix.doctor.v2";
 
@@ -11,7 +11,7 @@ pub enum DoctorStatus {
 }
 
 impl DoctorStatus {
-    fn as_json_str(self) -> &'static str {
+    fn to_json_str(self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Warning => "warning",
@@ -33,7 +33,7 @@ impl DoctorStatus {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DoctorLevel {
     Ok,
     Warning,
@@ -41,7 +41,7 @@ pub enum DoctorLevel {
 }
 
 impl DoctorLevel {
-    fn as_json_str(self) -> &'static str {
+    fn to_json_str(self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Warning => "warning",
@@ -94,7 +94,7 @@ impl DoctorFinding {
 
     fn write_json(&self, output: &mut String) {
         output.push_str("{\"level\":");
-        write_string(output, self.level.clone().as_json_str());
+        write_string(output, self.level.to_json_str());
         output.push_str(",\"code\":");
         write_string(output, &self.code);
         output.push_str(",\"message\":");
@@ -174,7 +174,7 @@ impl DoctorV2 {
         output.push_str(",\"timestamp_utc\":");
         write_string(&mut output, &self.timestamp_utc);
         output.push_str(",\"overall_status\":");
-        write_string(&mut output, self.overall_status.as_json_str());
+        write_string(&mut output, self.overall_status.to_json_str());
 
         output.push_str(",\"findings\":[");
         for (i, finding) in self.findings.iter().enumerate() {
@@ -205,9 +205,7 @@ impl DoctorV2 {
         let get_str = |key: &str| -> Result<String, ContractError> {
             Ok(parsed.field(key)?.as_str()?.to_owned())
         };
-        let get_bool = |key: &str| -> Result<bool, ContractError> {
-            parsed.field(key)?.as_bool()
-        };
+        let get_bool = |key: &str| -> Result<bool, ContractError> { parsed.field(key)?.as_bool() };
 
         let read_only = get_bool("read_only")?;
         let timestamp_utc = get_str("timestamp_utc")?;
@@ -316,9 +314,7 @@ mod tests {
                         "{\"official\":\"26.721.4979.0\",\"baseline\":\"26.707.8479.0\"}"
                             .to_owned(),
                     ),
-                    would_do: Some(
-                        "P2 would report drift; P3 would stage new baseline".to_owned(),
-                    ),
+                    would_do: Some("P2 would report drift; P3 would stage new baseline".to_owned()),
                 },
             ],
             overall_status: DoctorStatus::HighRisk,
@@ -349,7 +345,11 @@ mod tests {
             ..sample_doctor()
         };
         let err = doctor.validate().unwrap_err();
-        assert!(err.message.contains("at least one finding"), "{}", err.message);
+        assert!(
+            err.message.contains("at least one finding"),
+            "{}",
+            err.message
+        );
     }
 
     #[test]
@@ -368,15 +368,13 @@ mod tests {
 
     #[test]
     fn computes_status_correctly() {
-        let all_ok = vec![
-            DoctorFinding {
-                level: DoctorLevel::Ok,
-                code: "a".to_owned(),
-                message: "ok".to_owned(),
-                evidence_json: None,
-                would_do: None,
-            },
-        ];
+        let all_ok = vec![DoctorFinding {
+            level: DoctorLevel::Ok,
+            code: "a".to_owned(),
+            message: "ok".to_owned(),
+            evidence_json: None,
+            would_do: None,
+        }];
         assert_eq!(compute_status(&all_ok), DoctorStatus::Ok);
 
         let with_warning = vec![
@@ -477,7 +475,11 @@ mod tests {
     fn from_json_rejects_duplicate_key() {
         let bad_json = b"{\"schema\":\"chatgpt_fix.doctor.v2\",\"schema\":\"chatgpt_fix.doctor.v2\",\"read_only\":true,\"timestamp_utc\":\"t\",\"overall_status\":\"ok\",\"findings\":[{\"level\":\"ok\",\"code\":\"a\",\"message\":\"b\",\"evidence_json\":null,\"would_do\":null}]}";
         let err = DoctorV2::from_json(bad_json).unwrap_err();
-        assert_eq!(err.code, "json_duplicate_key", "unexpected code: {}", err.code);
+        assert_eq!(
+            err.code, "json_duplicate_key",
+            "unexpected code: {}",
+            err.code
+        );
     }
 
     #[test]

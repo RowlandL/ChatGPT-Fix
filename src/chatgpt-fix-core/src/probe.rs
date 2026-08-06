@@ -6,11 +6,55 @@ use crate::{
     SafeRelativePath,
 };
 
+/// The environment variable name used to authorize A2-P2 live inspection.
+pub const A2_P2_ENV: &str = "CHATGPT_FIX_A2_P2_READONLY";
+
 const EXPECTED_ARCHITECTURE: &str = "x64";
 const EXPECTED_PUBLISHER: &str = "CN=OpenAI";
 const EXPECTED_PUBLISHER_ID: &str = "2p2nqsd0c76g0";
 const LIVE_FIXTURE_ID: &str = "live-readonly";
 const PROBE_SOURCE_NAME: &str = "probe-output.json";
+
+/// Read a probe JSON file, parse it as `LiveInspectionV1`, validate it,
+/// and return the canonical inspection.
+/// Parse, validate, and verify identity/hash consistency for probe bytes.
+///
+/// This is the shared core for both file-based and live-stdin probe paths.
+fn inspect_from_bytes(bytes: &[u8], label: &str) -> Result<LiveInspectionV1, FixtureError> {
+    let inspection = LiveInspectionV1::from_json(bytes).map_err(|error| {
+        FixtureError::new(
+            "probe_json_invalid",
+            label,
+            format!("probe JSON is invalid: {error}"),
+        )
+    })?;
+
+    inspection.validate().map_err(|error| {
+        FixtureError::new(
+            "probe_validation_failed",
+            label,
+            format!("probe validation failed: {error}"),
+        )
+    })?;
+
+    // P2 identity checks (beyond the schema-level validate).
+    if inspection.identity_before != inspection.identity_after {
+        return Err(FixtureError::new(
+            "identity_changed_during_probe",
+            label,
+            "package identity changed during probe",
+        ));
+    }
+    if inspection.hash_before != inspection.hash_after {
+        return Err(FixtureError::new(
+            "hash_changed_during_probe",
+            label,
+            "package hash changed during probe",
+        ));
+    }
+
+    Ok(inspection)
+}
 
 /// Read a probe JSON file, parse it as `LiveInspectionV1`, validate it,
 /// and return the canonical inspection.
@@ -22,40 +66,14 @@ pub fn inspect_probe_json(path: &Path) -> Result<LiveInspectionV1, FixtureError>
             format!("probe JSON cannot be read: {error}"),
         )
     })?;
+    inspect_from_bytes(&bytes, &path.to_string_lossy())
+}
 
-    let inspection = LiveInspectionV1::from_json(&bytes).map_err(|error| {
-        FixtureError::new(
-            "probe_json_invalid",
-            path,
-            format!("probe JSON is invalid: {error}"),
-        )
-    })?;
-
-    inspection.validate().map_err(|error| {
-        FixtureError::new(
-            "probe_validation_failed",
-            path,
-            format!("probe validation failed: {error}"),
-        )
-    })?;
-
-    // P2 identity checks (beyond the schema-level validate).
-    if inspection.identity_before != inspection.identity_after {
-        return Err(FixtureError::new(
-            "identity_changed_during_probe",
-            path,
-            "package identity changed during probe",
-        ));
-    }
-    if inspection.hash_before != inspection.hash_after {
-        return Err(FixtureError::new(
-            "hash_changed_during_probe",
-            path,
-            "package hash changed during probe",
-        ));
-    }
-
-    Ok(inspection)
+/// Parse and validate a live probe JSON byte slice, returning the
+/// canonical inspection. Unlike `inspect_probe_json`, this does not
+/// read from a file and is intended for the live pwsh-stdin adapter.
+pub fn inspect_live_json(bytes: &[u8]) -> Result<LiveInspectionV1, FixtureError> {
+    inspect_from_bytes(bytes, "live-pwsh-probe")
 }
 
 /// Create a canonical `PlanV1` from a validated `LiveInspectionV1`.
@@ -148,6 +166,12 @@ pub fn plan_from_probe(inspection: &LiveInspectionV1) -> Result<PlanV1, FixtureE
 /// Read a probe JSON file, parse/validate it, and produce a canonical plan.
 pub fn plan_probe_json(path: &Path) -> Result<PlanV1, FixtureError> {
     let inspection = inspect_probe_json(path)?;
+    plan_from_probe(&inspection)
+}
+
+/// Parse, validate, and produce a plan from live probe JSON bytes.
+pub fn plan_live_json(bytes: &[u8]) -> Result<PlanV1, FixtureError> {
+    let inspection = inspect_live_json(bytes)?;
     plan_from_probe(&inspection)
 }
 

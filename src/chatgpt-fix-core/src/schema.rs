@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 
-use crate::json::{write_string, JsonParser, JsonValue};
+use crate::json::{JsonParser, JsonValue, write_string};
 use crate::{ContractError, SafeRelativePath, Sha256Digest};
 
 pub const PLAN_SCHEMA: &str = "chatgpt_fix.plan.v1";
@@ -356,12 +356,8 @@ impl LiveInspectionV1 {
         write_string(&mut output, self.manifest_sha256.as_str());
         output.push_str(",\"primary_executable\":");
         write_string(&mut output, &self.primary_executable);
-        write!(
-            &mut output,
-            ",\"primary_bytes\":{}",
-            self.primary_bytes
-        )
-        .expect("writing JSON to a String cannot fail");
+        write!(&mut output, ",\"primary_bytes\":{}", self.primary_bytes)
+            .expect("writing JSON to a String cannot fail");
         output.push_str(",\"primary_sha256\":");
         write_string(&mut output, self.primary_sha256.as_str());
 
@@ -442,14 +438,10 @@ impl LiveInspectionV1 {
             }
             Ok(n as u64)
         };
-        let get_bool = |key: &str| -> Result<bool, ContractError> {
-            parsed.field(key)?.as_bool()
-        };
+        let get_bool = |key: &str| -> Result<bool, ContractError> { parsed.field(key)?.as_bool() };
         let get_vec_str = |key: &str| -> Result<Vec<String>, ContractError> {
             let arr = parsed.field(key)?.as_array()?;
-            arr.iter()
-                .map(|v| Ok(v.as_str()?.to_owned()))
-                .collect()
+            arr.iter().map(|v| Ok(v.as_str()?.to_owned())).collect()
         };
         let get_opt_digest = |key: &str| -> Result<Option<Sha256Digest>, ContractError> {
             let v = parsed.field(key)?;
@@ -457,7 +449,9 @@ impl LiveInspectionV1 {
                 JsonValue::Null => Ok(None),
                 _ => {
                     let s = v.as_str()?;
-                    Ok(Some(Sha256Digest::parse(s).map_err(|_| make_err(key, "invalid SHA-256"))?))
+                    Ok(Some(
+                        Sha256Digest::parse(s).map_err(|_| make_err(key, "invalid SHA-256"))?,
+                    ))
                 }
             }
         };
@@ -555,18 +549,20 @@ impl PlanV1 {
                     ));
                 }
             };
-            let target = SafeRelativePath::parse(
-                action_val.field("target")?.as_str()?,
-            )
-            .map_err(|e| {
-                ContractError::new(
-                    "invalid_value",
-                    "target",
-                    format!("invalid action target: {}", e.message),
-                )
-            })?;
+            let target =
+                SafeRelativePath::parse(action_val.field("target")?.as_str()?).map_err(|e| {
+                    ContractError::new(
+                        "invalid_value",
+                        "target",
+                        format!("invalid action target: {}", e.message),
+                    )
+                })?;
             let execute = action_val.field("execute")?.as_bool()?;
-            actions.push(PlanAction { kind, target, execute });
+            actions.push(PlanAction {
+                kind,
+                target,
+                execute,
+            });
         }
 
         let errors_arr = parsed.field("errors")?.as_array()?;
@@ -589,10 +585,7 @@ impl PlanV1 {
     }
 }
 
-fn parse_baseline_from_json(
-    parent: &JsonValue,
-    field: &str,
-) -> Result<BaselineV2, ContractError> {
+fn parse_baseline_from_json(parent: &JsonValue, field: &str) -> Result<BaselineV2, ContractError> {
     let obj = parent.field(field)?;
     let schema = obj.field("schema")?.as_str()?;
     if schema != BASELINE_SCHEMA {
@@ -609,15 +602,13 @@ fn parse_baseline_from_json(
         version: obj.field("version")?.as_str()?.to_owned(),
         architecture: obj.field("architecture")?.as_str()?.to_owned(),
         publisher: obj.field("publisher")?.as_str()?.to_owned(),
-        source: SafeRelativePath::parse(obj.field("source")?.as_str()?).map_err(
-            |e| {
-                ContractError::new(
-                    "invalid_value",
-                    "source",
-                    format!("invalid source path: {}", e.message),
-                )
-            },
-        )?,
+        source: SafeRelativePath::parse(obj.field("source")?.as_str()?).map_err(|e| {
+            ContractError::new(
+                "invalid_value",
+                "source",
+                format!("invalid source path: {}", e.message),
+            )
+        })?,
         bytes: {
             let n = obj.field("bytes")?.as_i64()?;
             if n < 0 {
@@ -629,9 +620,8 @@ fn parse_baseline_from_json(
             }
             n as u64
         },
-        sha256: Sha256Digest::parse(obj.field("sha256")?.as_str()?).map_err(
-            |_| ContractError::new("invalid_value", "sha256", "invalid SHA-256"),
-        )?,
+        sha256: Sha256Digest::parse(obj.field("sha256")?.as_str()?)
+            .map_err(|_| ContractError::new("invalid_value", "sha256", "invalid SHA-256"))?,
     })
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
