@@ -1,0 +1,10 @@
+schema=chatgpt_fix.dependency_licenses.v1
+release=0.7.0
+source_commit=eb07a1dc808eeb1b07f2919d7fd25035d5ef88e6
+third_party_cargo_packages=0
+workspace_package=chatgpt-fix-core@0.7.0|license=NOASSERTION
+workspace_package=chatgpt-fix-launcher@0.7.0|license=NOASSERTION
+workspace_package=chatgpt-fix-manager@0.7.0|license=NOASSERTION
+workspace_package=chatgpt-fix-packer@0.7.0|license=NOASSERTION
+toolchain_component=rust-standard-library@1.97.1|license=Apache-2.0 OR MIT
+note=Cargo.lock contains only workspace packages; no third-party Cargo crate is redistributed.
