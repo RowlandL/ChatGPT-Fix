@@ -121,7 +121,203 @@ fn rejects_live_style_arguments_before_path_access() {
         concat!(
             "Usage: ChatGPT-Fix-Manager --version\n",
             "       ChatGPT-Fix-Manager review --fixture-root <path>\n",
+            "       ChatGPT-Fix-Manager review --plan-stdin\n",
         )
         .as_bytes()
+    );
+}
+
+#[test]
+fn review_plan_stdin_accepts_canonical_ready_plan() {
+    // Use plan_fixture to generate a canonical plan, then pipe to stdin.
+    let root = fixture("multi-version");
+    let plan = plan_fixture(&root).expect("fixture must produce a plan");
+    let plan_json = plan.to_json().expect("plan must serialize");
+
+    let output = Command::new(BINARY)
+        .args(["review", "--plan-stdin"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn manager review --plan-stdin");
+
+    use std::io::Write;
+    let mut child = output;
+    child
+        .stdin
+        .take()
+        .expect("stdin must be available")
+        .write_all(plan_json.as_bytes())
+        .expect("write plan to stdin");
+    let result = child.wait_with_output().expect("wait for manager");
+
+    assert_eq!(result.status.code(), Some(0), "stderr: {:?}", result.stderr);
+    assert_eq!(
+        String::from_utf8_lossy(&result.stdout).trim(),
+        plan_json,
+        "canonical output must match"
+    );
+    assert!(result.stderr.is_empty(), "stderr: {:?}", result.stderr);
+}
+
+#[test]
+fn review_plan_stdin_accepts_canonical_rejected_plan() {
+    // Use plan_fixture to generate a rejected plan, then pipe to stdin.
+    let root = fixture("unknown-publisher");
+    let plan = plan_fixture(&root).expect("fixture must produce a plan");
+    let plan_json = plan.to_json().expect("plan must serialize");
+
+    let output = Command::new(BINARY)
+        .args(["review", "--plan-stdin"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn manager review --plan-stdin");
+
+    use std::io::Write;
+    let mut child = output;
+    child
+        .stdin
+        .take()
+        .expect("stdin must be available")
+        .write_all(plan_json.as_bytes())
+        .expect("write plan to stdin");
+    let result = child.wait_with_output().expect("wait for manager");
+
+    assert_eq!(result.status.code(), Some(0), "stderr: {:?}", result.stderr);
+    assert_eq!(
+        String::from_utf8_lossy(&result.stdout).trim(),
+        plan_json,
+        "canonical output must match"
+    );
+    assert!(result.stderr.is_empty(), "stderr: {:?}", result.stderr);
+}
+
+#[test]
+fn review_plan_stdin_rejects_duplicate_key() {
+    // A plan JSON with a duplicate key.
+    let bad_json = b"{\"schema\":\"chatgpt_fix.plan.v1\",\"schema\":\"chatgpt_fix.plan.v1\",\"fixture_id\":\"test\",\"decision\":\"rejected\",\"baseline\":null,\"actions\":[],\"errors\":[\"test\"]}";
+
+    let output = Command::new(BINARY)
+        .args(["review", "--plan-stdin"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn manager review --plan-stdin");
+
+    use std::io::Write;
+    let mut child = output;
+    child
+        .stdin
+        .take()
+        .expect("stdin must be available")
+        .write_all(bad_json)
+        .expect("write bad json to stdin");
+    let result = child.wait_with_output().expect("wait for manager");
+
+    assert_eq!(result.status.code(), Some(3), "stderr: {:?}", result.stderr);
+    assert!(result.stdout.is_empty(), "stdout must be empty");
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains("duplicate_key"),
+        "stderr must mention duplicate key: {:?}",
+        result.stderr
+    );
+}
+
+#[test]
+fn review_plan_stdin_rejects_noncanonical_json() {
+    // JSON with trailing data.
+    let bad_json = b"{\"schema\":\"chatgpt_fix.plan.v1\",\"fixture_id\":\"test\",\"decision\":\"rejected\",\"baseline\":null,\"actions\":[],\"errors\":[\"test\"]} trailing";
+
+    let output = Command::new(BINARY)
+        .args(["review", "--plan-stdin"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn manager review --plan-stdin");
+
+    use std::io::Write;
+    let mut child = output;
+    child
+        .stdin
+        .take()
+        .expect("stdin must be available")
+        .write_all(bad_json)
+        .expect("write bad json to stdin");
+    let result = child.wait_with_output().expect("wait for manager");
+
+    assert_eq!(result.status.code(), Some(3), "stderr: {:?}", result.stderr);
+    assert!(result.stdout.is_empty(), "stdout must be empty");
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains("trailing data"),
+        "stderr must mention trailing data: {:?}",
+        result.stderr
+    );
+}
+
+#[test]
+fn review_plan_stdin_rejects_unknown_schema() {
+    let bad_json = b"{\"schema\":\"unknown.schema\",\"fixture_id\":\"test\",\"decision\":\"rejected\",\"baseline\":null,\"actions\":[],\"errors\":[\"test\"]}";
+
+    let output = Command::new(BINARY)
+        .args(["review", "--plan-stdin"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn manager review --plan-stdin");
+
+    use std::io::Write;
+    let mut child = output;
+    child
+        .stdin
+        .take()
+        .expect("stdin must be available")
+        .write_all(bad_json)
+        .expect("write bad json to stdin");
+    let result = child.wait_with_output().expect("wait for manager");
+
+    assert_eq!(result.status.code(), Some(3), "stderr: {:?}", result.stderr);
+    assert!(result.stdout.is_empty(), "stdout must be empty");
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains("schema_mismatch"),
+        "stderr must mention schema mismatch: {:?}",
+        result.stderr
+    );
+}
+
+#[test]
+fn review_plan_stdin_rejects_invalid_plan() {
+    // A plan with valid JSON but invalid plan structure (ready without baseline).
+    let bad_json = b"{\"schema\":\"chatgpt_fix.plan.v1\",\"fixture_id\":\"test\",\"decision\":\"ready\",\"baseline\":null,\"actions\":[],\"errors\":[]}";
+
+    let output = Command::new(BINARY)
+        .args(["review", "--plan-stdin"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn manager review --plan-stdin");
+
+    use std::io::Write;
+    let mut child = output;
+    child
+        .stdin
+        .take()
+        .expect("stdin must be available")
+        .write_all(bad_json)
+        .expect("write bad json to stdin");
+    let result = child.wait_with_output().expect("wait for manager");
+
+    assert_eq!(result.status.code(), Some(3), "stderr: {:?}", result.stderr);
+    assert!(result.stdout.is_empty(), "stdout must be empty");
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains("invariant_violation"),
+        "stderr must mention invariant violation: {:?}",
+        result.stderr
     );
 }
