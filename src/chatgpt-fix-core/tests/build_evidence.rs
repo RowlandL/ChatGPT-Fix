@@ -3,25 +3,25 @@ use std::path::{Path, PathBuf};
 
 use chatgpt_fix_core::{ReceiptV1, SafeRelativePath, Sha256Digest, sha256_bytes};
 
-const SOURCE_COMMIT: &str = "89543eb8c87d5f47a4b5563ea8c1d27d0674769d";
+const SOURCE_COMMIT: &str = "873b880f98640e40cc43baeb8d4ea1d0a78b0eac";
 const TOOLCHAIN: &str = "rustc 1.97.1 (8bab26f4f 2026-07-14); x86_64-pc-windows-msvc";
 const RELEASE_DIR: &str = "records/builds/0.4.0-win-x64";
 
 const ARTIFACTS: [(&str, u64, &str); 3] = [
     (
         "ChatGPT-Fix-Launcher.exe",
-        247_296,
-        "cc28a185cc08096457a199af5069fc2d069b943243f4089a08414f2aa0a8751a",
+        246_784,
+        "8930bb38b06287c0fd08d77c5a137634ebf2ef8cc845e4ab68e6808eed86c16d",
     ),
     (
         "ChatGPT-Fix-Manager.exe",
-        286_208,
-        "42f0159e7edbdb82431e498cea53ca2ee79419bed4dd03ddd2396bdf9d26ba10",
+        285_184,
+        "409ca63b4cfdc4a4f026eecc3dd88e42fc4f9805ff70f469f40632ce403a7540",
     ),
     (
         "ChatGPT-Fix-Packer.exe",
-        311_808,
-        "311331b3748eea52c37d7af961913f3459ea52bcc730600351f405911d05b815",
+        417_792,
+        "840e92350d037ffacfcb979108a8fa3f2906f8f1bd03370a079b9502a8966da5",
     ),
 ];
 
@@ -43,8 +43,8 @@ fn tracked_build_evidence_is_exact_and_self_consistent() {
             "version=0.4.0\n",
             "target=x86_64-pc-windows-msvc\n",
             "profile=release\n",
-            "source_commit=89543eb8c87d5f47a4b5563ea8c1d27d0674769d\n",
-            "chatgpt_fix_source_commit=89543eb8c87d5f47a4b5563ea8c1d27d0674769d\n",
+            "source_commit=873b880f98640e40cc43baeb8d4ea1d0a78b0eac\n",
+            "chatgpt_fix_source_commit=873b880f98640e40cc43baeb8d4ea1d0a78b0eac\n",
             "cargo_lock_sha256=d35112d2f419c8eb673d1f05603aa5b0546481c729165beac3b97033ddb14e56\n",
             "rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)\n",
             "cargo=cargo 1.97.1 (c980f4866 2026-06-30)\n",
@@ -98,7 +98,7 @@ fn tracked_build_evidence_is_exact_and_self_consistent() {
         [
             "schema=chatgpt_fix.dependency_licenses.v1",
             "release=0.4.0",
-            "source_commit=89543eb8c87d5f47a4b5563ea8c1d27d0674769d",
+            "source_commit=873b880f98640e40cc43baeb8d4ea1d0a78b0eac",
             "third_party_cargo_packages=0",
             "workspace_package=chatgpt-fix-core@0.4.0|license=NOASSERTION",
             "workspace_package=chatgpt-fix-launcher@0.4.0|license=NOASSERTION",
