@@ -12,8 +12,8 @@ pub use error::ContractError;
 pub use fixture::{FIXTURE_SCHEMA, FixtureError, plan_fixture};
 pub use path::{SafeRelativePath, Sha256Digest};
 pub use schema::{
-    BASELINE_SCHEMA, BaselineV2, LAUNCH_SCHEMA, LaunchV1, PLAN_SCHEMA, PlanAction, PlanActionKind,
-    PlanDecision, PlanV1, RECEIPT_SCHEMA, ReceiptV1,
+    BASELINE_SCHEMA, BaselineV2, LAUNCH_SCHEMA, LaunchV1, LIVE_INSPECTION_SCHEMA, LiveInspectionV1,
+    PLAN_SCHEMA, PlanAction, PlanActionKind, PlanDecision, PlanV1, RECEIPT_SCHEMA, ReceiptV1,
 };
 pub use sha256::sha256_bytes;
 

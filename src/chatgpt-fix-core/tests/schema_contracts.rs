@@ -1,9 +1,9 @@
 use std::error::Error;
 
 use chatgpt_fix_core::{
-    BASELINE_SCHEMA, BaselineV2, ContractError, LAUNCH_SCHEMA, LaunchV1, PLAN_SCHEMA, PlanAction,
-    PlanActionKind, PlanDecision, PlanV1, RECEIPT_SCHEMA, ReceiptV1, SafeRelativePath,
-    Sha256Digest,
+    BASELINE_SCHEMA, BaselineV2, ContractError, LAUNCH_SCHEMA, LaunchV1, LIVE_INSPECTION_SCHEMA,
+    LiveInspectionV1, PLAN_SCHEMA, PlanAction, PlanActionKind, PlanDecision, PlanV1, RECEIPT_SCHEMA,
+    ReceiptV1, SafeRelativePath, Sha256Digest,
 };
 
 fn path(value: &str) -> SafeRelativePath {
@@ -580,6 +580,194 @@ fn validation_and_serialization_are_separate_contract_operations() {
         value
             .to_json()
             .unwrap()
-            .starts_with(r#"{"schema":"chatgpt_fix.plan.v1","fixture_id":"""#)
+            .starts_with(r#"{"schema":"chatgpt_fix.plan.v1","fixture_id":""#)
     );
+}
+
+// ---------------------------------------------------------------------------
+// LiveInspectionV1
+// ---------------------------------------------------------------------------
+
+fn inspection() -> LiveInspectionV1 {
+    LiveInspectionV1 {
+        probe_source: "fixture".to_owned(),
+        package_full_name: "OpenAI.Codex_1.2.3.0_x64__2p2nqsd0c76g0".to_owned(),
+        version: "1.2.3.0".to_owned(),
+        architecture: "x64".to_owned(),
+        publisher: "CN=OpenAI".to_owned(),
+        publisher_id: "2p2nqsd0c76g0".to_owned(),
+        install_location: "C:\\Program Files\\WindowsApps\\OpenAI.Codex_1.2.3.0_x64__2p2nqsd0c76g0"
+            .to_owned(),
+        manifest_sha256: digest('a'),
+        primary_executable: "Codex.exe".to_owned(),
+        primary_bytes: 12345678,
+        primary_sha256: digest('b'),
+        manifest_dependencies: vec![
+            "Microsoft.VCLibs.140.00_14.0.30704.0_x64__8wekyb3d8bbwe".to_owned(),
+        ],
+        shortcut_target_path: "C:\\Program Files\\WindowsApps\\target\\Codex.exe".to_owned(),
+        shortcut_arguments: String::new(),
+        shortcut_working_directory: "C:\\Users\\test".to_owned(),
+        shortcut_icon_location: "C:\\Program Files\\WindowsApps\\target\\icon.ico".to_owned(),
+        identity_before: "OpenAI.Codex_1.2.3.0_x64__2p2nqsd0c76g0".to_owned(),
+        identity_after: "OpenAI.Codex_1.2.3.0_x64__2p2nqsd0c76g0".to_owned(),
+        hash_before: Some(digest('c')),
+        hash_after: Some(digest('c')),
+        codex_home_inspected: false,
+        local_state_inspected: false,
+        processes_inspected: false,
+    }
+}
+
+#[test]
+fn live_inspection_schema_is_frozen() {
+    assert_eq!(LIVE_INSPECTION_SCHEMA, "chatgpt_fix.live_inspection.v1");
+}
+
+#[test]
+fn live_inspection_validation_accepts_valid() {
+    inspection().validate().unwrap();
+}
+
+#[test]
+fn live_inspection_validation_rejects_inspected_flags() {
+    let mut v = inspection();
+    v.codex_home_inspected = true;
+    assert_contract_error(
+        &v.validate().unwrap_err(),
+        (
+            "invariant_violation",
+            "codex_home_inspected",
+            "P2 does not inspect codex home",
+        ),
+    );
+
+    let mut v = inspection();
+    v.local_state_inspected = true;
+    assert_contract_error(
+        &v.validate().unwrap_err(),
+        (
+            "invariant_violation",
+            "local_state_inspected",
+            "P2 does not inspect local state",
+        ),
+    );
+
+    let mut v = inspection();
+    v.processes_inspected = true;
+    assert_contract_error(
+        &v.validate().unwrap_err(),
+        (
+            "invariant_violation",
+            "processes_inspected",
+            "P2 does not inspect processes",
+        ),
+    );
+}
+
+#[test]
+fn live_inspection_json_roundtrip() {
+    let v = inspection();
+    let json = v.to_json().unwrap();
+    let parsed = LiveInspectionV1::from_json(json.as_bytes()).unwrap();
+    assert_eq!(v, parsed);
+}
+
+#[test]
+fn live_inspection_json_is_exact_compact() {
+    let json = inspection().to_json().unwrap();
+    assert!(json.starts_with("{\"schema\":\"chatgpt_fix.live_inspection.v1\""));
+    assert!(json.contains("\"codex_home_inspected\":false"));
+    assert!(json.contains("\"local_state_inspected\":false"));
+    assert!(json.contains("\"processes_inspected\":false"));
+    assert!(!json.contains('\n'));
+    assert!(!json.contains("  "));
+    assert!(!json.contains(": "));
+    assert!(!json.contains(", "));
+}
+
+// ---------------------------------------------------------------------------
+// PlanV1::from_json
+// ---------------------------------------------------------------------------
+
+#[test]
+fn plan_from_json_accepts_ready_plan() {
+    let json = ready_plan().to_json().unwrap();
+    let parsed = PlanV1::from_json(json.as_bytes()).unwrap();
+    assert_eq!(parsed, ready_plan());
+}
+
+#[test]
+fn plan_from_json_accepts_rejected_plan() {
+    let plan = PlanV1 {
+        fixture_id: "fixture-rejected".to_owned(),
+        decision: PlanDecision::Rejected,
+        baseline: None,
+        actions: Vec::new(),
+        errors: vec!["rejected".to_owned()],
+    };
+    let json = plan.to_json().unwrap();
+    let parsed = PlanV1::from_json(json.as_bytes()).unwrap();
+    assert_eq!(parsed, plan);
+}
+
+#[test]
+fn plan_from_json_byte_stability() {
+    // parse -> validate -> canonical serialize must be byte-stable.
+    let original = ready_plan().to_json().unwrap();
+    let parsed = PlanV1::from_json(original.as_bytes()).unwrap();
+    let canonical = parsed.to_json().unwrap();
+    assert_eq!(original, canonical);
+}
+
+#[test]
+fn plan_from_json_rejects_schema_mismatch() {
+    let err = PlanV1::from_json(b"{\"schema\":\"wrong\"}").unwrap_err();
+    assert_eq!(err.code, "schema_mismatch");
+}
+
+#[test]
+fn plan_from_json_rejects_bad_decision() {
+    let json = b"{\"schema\":\"chatgpt_fix.plan.v1\",\"fixture_id\":\"x\",\"decision\":\"maybe\",\"baseline\":null,\"actions\":[],\"errors\":[]}";
+    let err = PlanV1::from_json(json).unwrap_err();
+    assert_eq!(err.code, "invalid_value");
+}
+
+#[test]
+fn plan_from_json_rejects_duplicate_key() {
+    let json = b"{\"schema\":\"chatgpt_fix.plan.v1\",\"fixture_id\":\"x\",\"fixture_id\":\"y\",\"decision\":\"rejected\",\"baseline\":null,\"actions\":[],\"errors\":[\"e\"]}";
+    let err = PlanV1::from_json(json).unwrap_err();
+    assert_eq!(err.code, "json_duplicate_key");
+}
+
+#[test]
+fn plan_from_json_rejects_trailing_data() {
+    let json = ready_plan().to_json().unwrap();
+    let mut trailing = json.as_bytes().to_vec();
+    trailing.push(b'x');
+    let err = PlanV1::from_json(&trailing).unwrap_err();
+    assert_eq!(err.code, "json_trailing");
+}
+
+#[test]
+fn plan_from_json_rejects_invalid_plan() {
+    // missing actions for ready plan
+    let json = b"{\"schema\":\"chatgpt_fix.plan.v1\",\"fixture_id\":\"x\",\"decision\":\"ready\",\"baseline\":null,\"actions\":[],\"errors\":[]}";
+    let err = PlanV1::from_json(json).unwrap_err();
+    assert_eq!(err.code, "invariant_violation");
+}
+
+#[test]
+fn plan_from_json_rejects_unknown_action_kind() {
+    let json = b"{\"schema\":\"chatgpt_fix.plan.v1\",\"fixture_id\":\"x\",\"decision\":\"ready\",\"baseline\":{\"schema\":\"chatgpt_fix.baseline.v2\",\"baseline_id\":\"b\",\"package_full_name\":\"p\",\"version\":\"1\",\"architecture\":\"x64\",\"publisher\":\"p\",\"source\":\"s\",\"bytes\":1,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"actions\":[{\"kind\":\"would-fly\",\"target\":\"a\",\"execute\":false}],\"errors\":[]}";
+    let err = PlanV1::from_json(json).unwrap_err();
+    assert_eq!(err.code, "invalid_value");
+}
+
+#[test]
+fn plan_from_json_baseline_roundtrip() {
+    let plan = ready_plan();
+    let json = plan.to_json().unwrap();
+    let parsed = PlanV1::from_json(json.as_bytes()).unwrap();
+    assert_eq!(parsed.baseline, plan.baseline);
 }
