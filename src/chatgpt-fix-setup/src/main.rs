@@ -6,6 +6,9 @@ const PRODUCT_NAME: &str = "ChatGPT-Fix-Setup";
 const INSTALL_SUBDIR: &str = "ChatGPT-Fix";
 const BIN_SUBDIR: &str = "bin";
 const BACKUPS_SUBDIR: &str = "backups";
+const LOG_SUBDIR: &str = "logs";
+const LOG_FILE: &str = "setup.jsonl";
+const LOG_SCHEMA: &str = "chatgpt_fix.setup_log.v1";
 
 /// The four artifacts installed by Setup (per-user, only this project's
 /// binaries — never the official OpenAI package).
@@ -34,6 +37,52 @@ fn utc_now_compact() -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0)
         .to_string()
+}
+
+/// ISO-8601 UTC timestamp (no external crate; Hinnant civil-from-days).
+fn utc_iso8601() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let (hh, mm, ss) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y2 = if m <= 2 { y + 1 } else { y };
+    format!("{y2:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z")
+}
+
+/// Append one line to `<root>/logs/setup.jsonl` (parity with the initial
+/// `codex.ntfs.setup-log.v1` design). Best-effort: logging must never fail
+/// an install, so errors are silently ignored.
+fn append_setup_log(root: &Path, action: &str, status: &str, code: &str) {
+    let log_dir = root.join(LOG_SUBDIR);
+    let log_path = log_dir.join(LOG_FILE);
+    let line = format!(
+        "{{\"Schema\":\"{LOG_SCHEMA}\",\"TimestampUtc\":\"{}\",\"Action\":\"{action}\",\"Status\":\"{status}\",\"Code\":\"{code}\",\"SetupVersion\":\"{}\"}}\n",
+        utc_iso8601(),
+        env!("CARGO_PKG_VERSION")
+    );
+    if fs::create_dir_all(&log_dir).is_err() {
+        return;
+    }
+    use std::io::Write;
+    if let Ok(mut file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        let _ = file.write_all(line.as_bytes());
+    }
 }
 
 fn copy_atomic(src: &Path, dst: &Path) -> Result<(), String> {
@@ -70,6 +119,7 @@ fn run_install(source_dir: &Path) -> ExitCode {
             return ExitCode::from(4);
         }
     };
+    append_setup_log(&root, "INSTALL", "START", "ACTION_REQUESTED");
     let bin_dir = root.join(BIN_SUBDIR);
     let backups_dir = root.join(BACKUPS_SUBDIR);
 
@@ -83,11 +133,13 @@ fn run_install(source_dir: &Path) -> ExitCode {
         if dst.is_file() {
             if let Err(e) = fs::create_dir_all(&backup_target_dir) {
                 eprintln!("install_failed: cannot create backup dir: {e}");
+                append_setup_log(&root, "INSTALL", "FAIL", "FAIL_BACKUP_DIR");
                 return ExitCode::from(3);
             }
             let backup_dst = backup_target_dir.join(name);
             if let Err(e) = fs::copy(&dst, &backup_dst) {
                 eprintln!("install_failed: cannot back up {name}: {e}");
+                append_setup_log(&root, "INSTALL", "FAIL", "FAIL_BACKUP_COPY");
                 return ExitCode::from(3);
             }
             backed_up.push(name);
@@ -97,21 +149,33 @@ fn run_install(source_dir: &Path) -> ExitCode {
     // Install step: atomic copy of each artifact.
     if let Err(e) = fs::create_dir_all(&bin_dir) {
         eprintln!("install_failed: cannot create bin dir: {e}");
+        append_setup_log(&root, "INSTALL", "FAIL", "FAIL_BIN_DIR");
         return ExitCode::from(3);
     }
     for name in ARTIFACTS {
         if let Err(e) = copy_atomic(&source_dir.join(name), &bin_dir.join(name)) {
             eprintln!("install_failed: {e}");
+            append_setup_log(&root, "INSTALL", "FAIL", "FAIL_ARTIFACT_COPY");
             return ExitCode::from(3);
         }
     }
 
     // One-click configuration (the whole point of Setup): detect the official
-    // package, write current.json, and create shortcuts. Failures here are
-    // reported but do NOT roll back the installed binaries — the install
-    // itself succeeded.
+    // package, stage the user-owned baseline, write current.json, and create
+    // shortcuts. Failures here are reported but do NOT roll back the installed
+    // binaries — the install itself succeeded.
     let launcher = bin_dir.join("ChatGPT-Fix-Launcher.exe");
     let config_ok = complete_one_click_config(&root, &launcher);
+    if config_ok {
+        append_setup_log(
+            &root,
+            "CONFIG",
+            "PASS",
+            "BASELINE_STAGED_AND_POINTER_WRITTEN",
+        );
+    } else {
+        append_setup_log(&root, "CONFIG", "FAIL", "CONFIG_INCOMPLETE");
+    }
 
     // Install receipt (stdout, typed schema).
     let receipt = format!(
@@ -127,13 +191,146 @@ fn run_install(source_dir: &Path) -> ExitCode {
         utc_now_compact()
     );
     println!("{receipt}");
+    append_setup_log(&root, "INSTALL", "PASS", "INSTALLED");
     ExitCode::SUCCESS
 }
 
-/// One-click configuration: locate the official OpenAI.Codex package, write
-/// `<root>/current.json` pointing at its app directory, and create/repair the
-/// `ChatGPT.lnk` and `ChatGPT-Fix-Launcher.lnk` shortcuts so the user is done
-/// after a single double-click install.
+/// Stage an immutable user-owned baseline: copy `<pkg_root>/app` into
+/// `baseline_app` (tmp + rename for atomicity) and write a verified
+/// `state.json` (StagingV1 shape, FULL hash manifest) so the launcher's
+/// baseline check accepts it.
+///
+/// Idempotent: an existing baseline whose `ChatGPT.exe` matches the source
+/// size is reused as-is (fast reinstall).
+fn stage_baseline(
+    pkg_root: &Path,
+    baseline_root: &Path,
+    baseline_app: &Path,
+    src_exe: &Path,
+) -> bool {
+    let existing_exe = baseline_app.join("ChatGPT.exe");
+    let size_matches = std::fs::metadata(&existing_exe).ok().map(|m| m.len())
+        == std::fs::metadata(src_exe).ok().map(|m| m.len());
+    // Reuse only when the baseline is complete AND its state.json matches the
+    // current source version (verified). A stale/partial/invalid baseline is
+    // re-staged below — this self-heals the earlier bug where state.json was
+    // written with a full file count but a single-entry manifest.
+    let pkg_dir_name = pkg_root
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "package".to_owned());
+    let current_version = pkg_dir_name
+        .split('_')
+        .nth(1)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&pkg_dir_name)
+        .to_owned();
+    let state_ok = fs::read(baseline_root.join("state.json"))
+        .map(|bytes| {
+            let text = String::from_utf8_lossy(&bytes);
+            text.contains("\"state\":\"verified\"")
+                && text.contains(&format!("\"source_version\":\"{current_version}\""))
+        })
+        .unwrap_or(false);
+    if existing_exe.is_file() && size_matches && state_ok {
+        return true; // already staged and verified for this package version
+    }
+    if fs::create_dir_all(baseline_root).is_err() {
+        eprintln!("setup_warn: cannot create baseline root");
+        return false;
+    }
+    let tmp = baseline_root.join("app.tmp");
+    if tmp.exists() && fs::remove_dir_all(&tmp).is_err() {
+        eprintln!("setup_warn: cannot clear stale baseline tmp");
+        return false;
+    }
+    let manifest = match copy_dir_manifest(&pkg_root.join("app"), &tmp) {
+        Some(m) => m,
+        None => {
+            eprintln!("setup_warn: cannot copy official app to baseline");
+            return false;
+        }
+    };
+    if manifest.is_empty() {
+        eprintln!("setup_warn: baseline manifest is empty; refusing to commit");
+        let _ = fs::remove_dir_all(&tmp);
+        return false;
+    }
+    if baseline_app.exists() && fs::remove_dir_all(baseline_app).is_err() {
+        eprintln!("setup_warn: cannot replace previous baseline app");
+        return false;
+    }
+    if fs::rename(&tmp, baseline_app).is_err() {
+        eprintln!("setup_warn: cannot commit baseline app");
+        return false;
+    }
+    // Verified StagingV1 state file with the FULL per-file hash manifest
+    // (parity with the initial codex.ntfs.recoverable-backup.v1 design; the
+    // launcher's invariant check requires files_staged == manifest length).
+    let files_staged = manifest.len() as u64;
+    let total_bytes: u64 = manifest.iter().map(|e| e.bytes).sum();
+    let entries_json = manifest
+        .iter()
+        .map(|e| {
+            format!(
+                "{{\"relative_path\":\"{}\",\"bytes\":{},\"sha256\":\"{}\"}}",
+                e.rel, e.bytes, e.sha
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let state = format!(
+        "{{\"schema\":\"chatgpt_fix.staging.v1\",\"source_package_full_name\":\"{}\",\"source_version\":\"{}\",\"source_hash_manifest\":[{}],\"staging_root\":\"{}\",\"baseline_root\":\"{}\",\"files_staged\":{},\"total_bytes\":{},\"state\":\"verified\",\"created_at_utc\":\"{}\"}}\n",
+        pkg_root.to_string_lossy().replace('\\', "/"),
+        current_version,
+        entries_json,
+        baseline_root.to_string_lossy().replace('\\', "/"),
+        baseline_root.to_string_lossy().replace('\\', "/"),
+        files_staged,
+        total_bytes,
+        utc_now_compact()
+    );
+    fs::write(baseline_root.join("state.json"), state).is_ok()
+}
+
+/// One manifest entry: relative path, size, lowercase hex SHA-256.
+struct ManifestEntry {
+    rel: String,
+    bytes: u64,
+    sha: String,
+}
+
+/// Recursively copy `src` -> `dst`, hashing every file while copying.
+/// Returns the full manifest (relative path / bytes / SHA-256).
+fn copy_dir_manifest(src: &Path, dst: &Path) -> Option<Vec<ManifestEntry>> {
+    fs::create_dir_all(dst).ok()?;
+    let mut out = Vec::new();
+    let entries = fs::read_dir(src).ok()?;
+    for entry in entries.flatten() {
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        let md = fs::symlink_metadata(&from).ok()?;
+        if md.is_dir() {
+            out.extend(copy_dir_manifest(&from, &to)?);
+        } else {
+            let bytes = fs::copy(&from, &to).ok()?;
+            let data = fs::read(&from).ok()?;
+            let sha = chatgpt_fix_core::sha256_bytes(&data).to_string();
+            let rel = from
+                .strip_prefix(src)
+                .ok()?
+                .to_string_lossy()
+                .replace('\\', "/");
+            out.push(ManifestEntry { rel, bytes, sha });
+        }
+    }
+    Some(out)
+}
+
+/// One-click configuration: locate the official OpenAI.Codex package, stage a
+/// user-owned baseline copy, write `<root>/current.json` pointing at it, and
+/// create/repair the `ChatGPT.lnk` and `ChatGPT-Fix-Launcher.lnk` shortcuts so
+/// the user is done after a single double-click install.
 fn complete_one_click_config(root: &Path, launcher: &Path) -> bool {
     let mut ok = true;
 
@@ -157,21 +354,37 @@ fn complete_one_click_config(root: &Path, launcher: &Path) -> bool {
     if let Some(pkg_root) = app_root.as_deref() {
         let exe = Path::new(pkg_root).join("app").join("ChatGPT.exe");
         if exe.is_file() {
-            // 2. Write current.json pointer (chatgpt_fix.pointer.v1) pointing
-            // at the package app directory (baseline root).
-            let pointer = format!(
-                "{{\"schema\":\"chatgpt_fix.pointer.v1\",\"baseline_root\":\"{}\"}}\n",
-                Path::new(pkg_root)
-                    .join("app")
-                    .to_string_lossy()
-                    .replace('\\', "/")
-            );
-            let pointer_path = root.join("current.json");
-            let tmp = pointer_path.with_extension("json.tmp");
-            if fs::write(&tmp, pointer).is_ok() && fs::rename(&tmp, &pointer_path).is_ok() {
-                ok = ok && true;
+            // 2. Stage an immutable user-owned baseline (the ORIGINAL NTFS
+            // mitigation, plan P3/A3): copy the official app out of the
+            // protected WindowsApps store into baselines/<package>/app and
+            // point current.json at that copy. Running ChatGPT.exe directly
+            // from WindowsApps leaks kernel nonpaged pool (~440 MB/min
+            // observed); the user-local copy runs as a plain file tree and
+            // does not.
+            let pkg_dir = Path::new(pkg_root)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "package".to_owned());
+            let baseline_root = root.join("baselines").join(&pkg_dir);
+            let baseline_app = baseline_root.join("app");
+            if stage_baseline(Path::new(pkg_root), &baseline_root, &baseline_app, &exe) {
+                // Pointer must reference the baseline ROOT (the directory that
+                // holds state.json) so the launcher's verified-baseline check
+                // passes; the executable lives at <root>/app/ChatGPT.exe.
+                let pointer = format!(
+                    "{{\"schema\":\"chatgpt_fix.pointer.v1\",\"baseline_root\":\"{}\"}}\n",
+                    baseline_root.to_string_lossy().replace('\\', "/")
+                );
+                let pointer_path = root.join("current.json");
+                let tmp = pointer_path.with_extension("json.tmp");
+                if fs::write(&tmp, pointer).is_ok() && fs::rename(&tmp, &pointer_path).is_ok() {
+                    ok = ok && true;
+                } else {
+                    eprintln!("setup_warn: cannot write current.json");
+                    ok = false;
+                }
             } else {
-                eprintln!("setup_warn: cannot write current.json");
+                eprintln!("setup_warn: baseline staging failed; current.json unchanged");
                 ok = false;
             }
         } else {

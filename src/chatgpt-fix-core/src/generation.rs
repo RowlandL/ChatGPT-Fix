@@ -487,6 +487,11 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<LaunchV1, ContractErro
     // Resolve ChatGPT.exe under the baseline root. Accept either
     // <root>/ChatGPT.exe or <root>/app/ChatGPT.exe (official package layout).
     let baseline = Path::new(baseline_root);
+    // Fail-closed: only launch from a verified immutable baseline (state.json
+    // with state=verified). A pointer written by an out-of-band path (e.g.
+    // pointing directly at WindowsApps) is rejected here — the guard that
+    // keeps the NTFS-fix launch path intact.
+    require_verified_baseline(baseline)?;
     let mut executable = baseline.join("ChatGPT.exe");
     if !executable.is_file() {
         let nested = baseline.join("app").join("ChatGPT.exe");
@@ -504,8 +509,15 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<LaunchV1, ContractErro
 
     // Single-instance guard: if a ChatGPT.exe process is already running,
     // do NOT spawn another copy (multiple Electron stacks make startup slow
-    // and waste memory). Reuse the running instance instead.
+    // and waste memory). Reuse the running instance instead AND bring its
+    // window to the foreground so the user sees feedback (instead of the
+    // launcher silently doing nothing).
     if chatgpt_process_running() {
+        // Activate the running app window via its AUMID so the user sees the
+        // existing ChatGPT window pop to the front.
+        let _ = Command::new("explorer.exe")
+            .arg("shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App")
+            .spawn();
         let launch = LaunchV1 {
             launch_id: format!(
                 "live-{}",
@@ -534,9 +546,6 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<LaunchV1, ContractErro
             would_start: true,
             reason: None,
         };
-        // Mark the launch receipt with a note via the launch_id? No — keep
-        // the receipt valid; the caller sees the same shape. The running
-        // instance is reused, nothing is spawned.
         launch.validate()?;
         return Ok(launch);
     }

@@ -175,13 +175,20 @@ fn live_launch_fails_closed_on_null_pointer() {
 
 #[test]
 fn live_launch_resolves_pointer_and_fails_closed_when_exe_missing() {
-    // A pointer pointing at a synthetic baseline whose app dir exists but
+    // A pointer pointing at a verified baseline whose app dir exists but
     // contains no ChatGPT.exe must fail closed (baseline_executable_missing).
     let root = std::env::temp_dir().join(format!("chatgpt-fix-launch-ok-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("create program root");
-    let baseline = root.join("baseline/app");
-    fs::create_dir_all(&baseline).expect("create baseline app dir");
+    let baseline = root.join("baseline");
+    fs::create_dir_all(baseline.join("app")).expect("create baseline app dir");
+    // Verified StagingV1 state so the launch passes the baseline check and
+    // reaches the exe-missing fail-closed path.
+    fs::write(
+        baseline.join("state.json"),
+        "{\"schema\":\"chatgpt_fix.staging.v1\",\"source_package_full_name\":\"test\",\"source_version\":\"1\",\"source_hash_manifest\":[{\"relative_path\":\"ChatGPT.exe\",\"bytes\":1,\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}],\"staging_root\":\"/tmp\",\"baseline_root\":\"/tmp\",\"files_staged\":1,\"total_bytes\":1,\"state\":\"verified\",\"created_at_utc\":\"2026-01-01T00:00:00Z\"}\n",
+    )
+    .expect("write verified state.json");
     fs::write(
         root.join("current.json"),
         format!(
