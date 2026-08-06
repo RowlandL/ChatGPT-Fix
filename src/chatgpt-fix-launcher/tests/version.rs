@@ -10,7 +10,7 @@ fn prints_exact_version() {
         .expect("run chatgpt-fix-launcher");
 
     assert_eq!(output.status.code(), Some(0), "stderr: {:?}", output.stderr);
-    assert_eq!(output.stdout, b"ChatGPT-Fix-Launcher 0.9.0\n");
+    assert_eq!(output.stdout, b"ChatGPT-Fix-Launcher 1.0.0\n");
     assert!(output.stderr.is_empty(), "stderr: {:?}", output.stderr);
 }
 
@@ -46,6 +46,7 @@ fn assert_usage_error(command: &mut Command) {
             "       ChatGPT-Fix-Launcher dry-run --fixture-root <path>\n",
             "       ChatGPT-Fix-Launcher observe --fixture-root <path>\n",
             "       ChatGPT-Fix-Launcher shutdown --fixture-root <path>\n",
+            "       ChatGPT-Fix-Launcher maintenance-plan --fixture-root <path>\n",
             "       ChatGPT-Fix-Launcher launch --live <path>\n",
         )
         .as_bytes(),

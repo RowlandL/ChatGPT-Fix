@@ -10,7 +10,7 @@ fn prints_exact_version() {
         .expect("run chatgpt-fix-manager");
 
     assert_eq!(output.status.code(), Some(0), "stderr: {:?}", output.stderr);
-    assert_eq!(output.stdout, b"ChatGPT-Fix-Manager 0.9.0\n");
+    assert_eq!(output.stdout, b"ChatGPT-Fix-Manager 1.0.0\n");
     assert!(output.stderr.is_empty(), "stderr: {:?}", output.stderr);
 }
 
@@ -50,6 +50,7 @@ fn assert_usage_error(command: &mut Command) {
             "       ChatGPT-Fix-Manager config-plan --scope <mcp|codex_home|history>\n",
             "       ChatGPT-Fix-Manager config-apply --proposal <path> --canary <root>\n",
             "       ChatGPT-Fix-Manager config-rollback --proposal <path>\n",
+            "       ChatGPT-Fix-Manager maintenance-plan --fixture-root <path>\n",
             "       ChatGPT-Fix-Manager doctor\n",
         )
         .as_bytes(),

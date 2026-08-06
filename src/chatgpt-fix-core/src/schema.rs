@@ -14,6 +14,8 @@ pub const GENERATION_SCHEMA: &str = "chatgpt_fix.generation.v1";
 pub const OWNERSHIP_SCHEMA: &str = "chatgpt_fix.ownership.v1";
 pub const SHUTDOWN_SCHEMA: &str = "chatgpt_fix.shutdown.v1";
 pub const CONFIG_PROPOSAL_SCHEMA: &str = "chatgpt_fix.config_proposal.v1";
+pub const MAINTENANCE_PLAN_SCHEMA: &str = "chatgpt_fix.maintenance_plan.v1";
+pub const NTC_MANIFEST_SCHEMA: &str = "chatgpt_fix.ntc_manifest.v1";
 
 /// The ownership observation state machine (report-only).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -1778,5 +1780,282 @@ impl ConfigProposalV1 {
         };
         proposal.validate()?;
         Ok(proposal)
+    }
+}
+
+/// A single dry-run maintenance item.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaintenanceItem {
+    pub action: String,
+    pub scope: String,
+    pub would_do: String,
+}
+
+/// The maintenance dry-run plan (`chatgpt_fix.maintenance_plan.v1`).
+///
+/// Produced by `maintenance-plan --fixture-root <path>` on Packer, Manager,
+/// and Launcher. `dry_run` is always `true`: the plan lists would-do items
+/// only and never executes them. Items that require A7 (.codex maintenance),
+/// A8 (Setup/privilege/signing), or A9 (publication) are marked `blocked` and
+/// stay outside the would-do list.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaintenancePlanV1 {
+    pub plan_id: String,
+    pub dry_run: bool,
+    pub items: Vec<MaintenanceItem>,
+    pub blocked: Vec<String>,
+    pub state: String,
+    pub created_at_utc: String,
+}
+
+impl MaintenancePlanV1 {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        validate_text("plan_id", &self.plan_id)?;
+        validate_text("created_at_utc", &self.created_at_utc)?;
+        if !self.dry_run {
+            return Err(ContractError::new(
+                "invalid_value",
+                "dry_run",
+                "maintenance plans must always be dry-run",
+            ));
+        }
+        if self.state != "dry_run" {
+            return Err(ContractError::new(
+                "invalid_value",
+                "state",
+                "maintenance plan state must be 'dry_run'",
+            ));
+        }
+        for item in &self.items {
+            validate_text("action", &item.action)?;
+            validate_text("scope", &item.scope)?;
+            validate_text("would_do", &item.would_do)?;
+        }
+        for blocked in &self.blocked {
+            validate_text("blocked", blocked)?;
+        }
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> Result<String, ContractError> {
+        let mut output = String::new();
+        output.push_str("{\"schema\":");
+        write_string(&mut output, MAINTENANCE_PLAN_SCHEMA);
+        output.push_str(",\"plan_id\":");
+        write_string(&mut output, &self.plan_id);
+        output.push_str(&format!(
+            ",\"dry_run\":{},",
+            if self.dry_run { "true" } else { "false" }
+        ));
+        output.push_str("\"items\":[");
+        for (i, item) in self.items.iter().enumerate() {
+            if i != 0 {
+                output.push(',');
+            }
+            output.push_str("{\"action\":");
+            write_string(&mut output, &item.action);
+            output.push_str(",\"scope\":");
+            write_string(&mut output, &item.scope);
+            output.push_str(",\"would_do\":");
+            write_string(&mut output, &item.would_do);
+            output.push('}');
+        }
+        output.push(']');
+        output.push_str(",\"blocked\":[");
+        for (i, blocked) in self.blocked.iter().enumerate() {
+            if i != 0 {
+                output.push(',');
+            }
+            write_string(&mut output, blocked);
+        }
+        output.push(']');
+        output.push_str(",\"state\":");
+        write_string(&mut output, &self.state);
+        output.push_str(",\"created_at_utc\":");
+        write_string(&mut output, &self.created_at_utc);
+        output.push('}');
+        Ok(output)
+    }
+
+    pub fn from_json(json: &[u8]) -> Result<Self, ContractError> {
+        let parsed = JsonParser::new(json)?.parse_top_level()?;
+        let _obj = parsed.as_object()?;
+
+        let schema = parsed.field("schema")?.as_str()?;
+        if schema != MAINTENANCE_PLAN_SCHEMA {
+            return Err(ContractError::new(
+                "schema_mismatch",
+                "schema",
+                format!("expected {}, got {}", MAINTENANCE_PLAN_SCHEMA, schema),
+            ));
+        }
+
+        let get_str = |key: &str| -> Result<String, ContractError> {
+            Ok(parsed.field(key)?.as_str()?.to_owned())
+        };
+
+        let plan_id = get_str("plan_id")?;
+        let dry_run = parsed.field("dry_run")?.as_bool()?;
+        let state = get_str("state")?;
+        let created_at_utc = get_str("created_at_utc")?;
+
+        let items_value = parsed.field("items")?;
+        let items_array = items_value.as_array()?;
+        let mut items = Vec::with_capacity(items_array.len());
+        for entry in items_array {
+            items.push(MaintenanceItem {
+                action: entry.field("action")?.as_str()?.to_owned(),
+                scope: entry.field("scope")?.as_str()?.to_owned(),
+                would_do: entry.field("would_do")?.as_str()?.to_owned(),
+            });
+        }
+
+        let blocked_value = parsed.field("blocked")?;
+        let blocked_array = blocked_value.as_array()?;
+        let mut blocked = Vec::with_capacity(blocked_array.len());
+        for entry in blocked_array {
+            blocked.push(entry.as_str()?.to_owned());
+        }
+
+        let plan = MaintenancePlanV1 {
+            plan_id,
+            dry_run,
+            items,
+            blocked,
+            state,
+            created_at_utc,
+        };
+        plan.validate()?;
+        Ok(plan)
+    }
+}
+
+/// The native token-cost reapply state (read-only registration).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum NtcReapplyState {
+    Clean,
+    NeedsReapply,
+    RepairReceipt,
+}
+
+impl NtcReapplyState {
+    pub(crate) fn as_json_str(self) -> &'static str {
+        match self {
+            Self::Clean => "clean",
+            Self::NeedsReapply => "needs_reapply",
+            Self::RepairReceipt => "repair_receipt",
+        }
+    }
+
+    pub(crate) fn from_json_str(s: &str) -> Result<Self, ContractError> {
+        match s {
+            "clean" => Ok(Self::Clean),
+            "needs_reapply" => Ok(Self::NeedsReapply),
+            "repair_receipt" => Ok(Self::RepairReceipt),
+            other => Err(ContractError::new(
+                "invalid_value",
+                "reapply_state",
+                format!("expected 'clean', 'needs_reapply', or 'repair_receipt', got '{other}'"),
+            )),
+        }
+    }
+}
+
+/// The native token-cost manifest (`chatgpt_fix.ntc_manifest.v1`).
+///
+/// A read-only registration of NTC-NATIVE-20260801 delegated evidence:
+/// before/after hashes, backup ref, generation, and reapply state. P8 only
+/// registers; it never re-packs app.asar or mutates the helper task.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NtcManifestV1 {
+    pub artifact: String,
+    pub before_sha256: String,
+    pub after_sha256: String,
+    pub backup_ref: String,
+    pub generation: u64,
+    pub reapply_state: NtcReapplyState,
+    pub helper_health: String,
+    pub created_at_utc: String,
+}
+
+impl NtcManifestV1 {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        validate_text("artifact", &self.artifact)?;
+        validate_text("before_sha256", &self.before_sha256)?;
+        validate_text("after_sha256", &self.after_sha256)?;
+        validate_text("backup_ref", &self.backup_ref)?;
+        validate_text("helper_health", &self.helper_health)?;
+        validate_text("created_at_utc", &self.created_at_utc)?;
+        if self.before_sha256.is_empty() || self.after_sha256.is_empty() {
+            return Err(ContractError::new(
+                "invalid_value",
+                "sha256",
+                "before/after hashes must not be empty",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> Result<String, ContractError> {
+        let mut output = String::new();
+        output.push_str("{\"schema\":");
+        write_string(&mut output, NTC_MANIFEST_SCHEMA);
+        output.push_str(",\"artifact\":");
+        write_string(&mut output, &self.artifact);
+        output.push_str(",\"before_sha256\":");
+        write_string(&mut output, &self.before_sha256);
+        output.push_str(",\"after_sha256\":");
+        write_string(&mut output, &self.after_sha256);
+        output.push_str(",\"backup_ref\":");
+        write_string(&mut output, &self.backup_ref);
+        output.push_str(&format!(",\"generation\":{}", self.generation));
+        output.push_str(",\"reapply_state\":");
+        write_string(&mut output, self.reapply_state.as_json_str());
+        output.push_str(",\"helper_health\":");
+        write_string(&mut output, &self.helper_health);
+        output.push_str(",\"created_at_utc\":");
+        write_string(&mut output, &self.created_at_utc);
+        output.push('}');
+        Ok(output)
+    }
+
+    pub fn from_json(json: &[u8]) -> Result<Self, ContractError> {
+        let parsed = JsonParser::new(json)?.parse_top_level()?;
+        let _obj = parsed.as_object()?;
+
+        let schema = parsed.field("schema")?.as_str()?;
+        if schema != NTC_MANIFEST_SCHEMA {
+            return Err(ContractError::new(
+                "schema_mismatch",
+                "schema",
+                format!("expected {}, got {}", NTC_MANIFEST_SCHEMA, schema),
+            ));
+        }
+
+        let get_str = |key: &str| -> Result<String, ContractError> {
+            Ok(parsed.field(key)?.as_str()?.to_owned())
+        };
+
+        let generation = parsed.field("generation")?.as_i64()?;
+        if generation < 0 {
+            return Err(ContractError::new(
+                "json_value",
+                "generation",
+                "must be non-negative",
+            ));
+        }
+
+        let manifest = NtcManifestV1 {
+            artifact: get_str("artifact")?,
+            before_sha256: get_str("before_sha256")?,
+            after_sha256: get_str("after_sha256")?,
+            backup_ref: get_str("backup_ref")?,
+            generation: generation as u64,
+            reapply_state: NtcReapplyState::from_json_str(get_str("reapply_state")?.as_str())?,
+            helper_health: get_str("helper_health")?,
+            created_at_utc: get_str("created_at_utc")?,
+        };
+        manifest.validate()?;
+        Ok(manifest)
     }
 }

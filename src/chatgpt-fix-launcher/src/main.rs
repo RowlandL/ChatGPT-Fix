@@ -28,6 +28,12 @@ fn main() -> ExitCode {
         {
             shutdown_fixture(Path::new(root))
         }
+        [command, option, root]
+            if command == OsStr::new("maintenance-plan")
+                && option == OsStr::new("--fixture-root") =>
+        {
+            run_maintenance_plan(Path::new(root))
+        }
         [command, option, _]
             if command == OsStr::new("launch") && option == OsStr::new("--live") =>
         {
@@ -177,5 +183,30 @@ fn print_usage() {
     eprintln!("       {PRODUCT_NAME} dry-run --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} observe --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} shutdown --fixture-root <path>");
+    eprintln!("       {PRODUCT_NAME} maintenance-plan --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} launch --live <path>");
+}
+
+/// `ChatGPT-Fix-Launcher maintenance-plan --fixture-root <path>`.
+///
+/// A1 dry-run: emits a `chatgpt_fix.maintenance_plan.v1` receipt listing only
+/// authorized would-do items; A7/A8/A9 actions are marked blocked. No file is
+/// modified.
+fn run_maintenance_plan(root: &Path) -> ExitCode {
+    match chatgpt_fix_core::generate_maintenance_plan(root) {
+        Ok(plan) => match plan.to_json() {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("maintenance plan serialize failed: {err}");
+                ExitCode::from(4)
+            }
+        },
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::from(3)
+        }
+    }
 }

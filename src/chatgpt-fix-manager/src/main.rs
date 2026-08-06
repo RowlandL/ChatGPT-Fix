@@ -54,6 +54,12 @@ fn main() -> ExitCode {
         {
             run_config_rollback(Path::new(proposal))
         }
+        [command, option, root]
+            if command == OsStr::new("maintenance-plan")
+                && option == OsStr::new("--fixture-root") =>
+        {
+            run_maintenance_plan(Path::new(root))
+        }
         [command] if command == OsStr::new("doctor") => {
             eprintln!("doctor v2 requires P6 authorization");
             ExitCode::from(2)
@@ -405,5 +411,30 @@ fn print_usage() {
     eprintln!("       {PRODUCT_NAME} config-plan --scope <mcp|codex_home|history>");
     eprintln!("       {PRODUCT_NAME} config-apply --proposal <path> --canary <root>");
     eprintln!("       {PRODUCT_NAME} config-rollback --proposal <path>");
+    eprintln!("       {PRODUCT_NAME} maintenance-plan --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} doctor");
+}
+
+/// `ChatGPT-Fix-Manager maintenance-plan --fixture-root <path>`.
+///
+/// A1 dry-run: emits a `chatgpt_fix.maintenance_plan.v1` receipt listing only
+/// authorized would-do items; A7/A8/A9 actions are marked blocked. No file is
+/// modified.
+fn run_maintenance_plan(root: &Path) -> ExitCode {
+    match chatgpt_fix_core::generate_maintenance_plan(root) {
+        Ok(plan) => match plan.to_json() {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("maintenance plan serialize failed: {err}");
+                ExitCode::from(4)
+            }
+        },
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::from(3)
+        }
+    }
 }

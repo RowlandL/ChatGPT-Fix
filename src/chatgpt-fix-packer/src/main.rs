@@ -59,9 +59,39 @@ fn main() -> ExitCode {
         {
             run_verify(Path::new(path))
         }
+        [command, option, root]
+            if command == OsStr::new("maintenance-plan")
+                && option == OsStr::new("--fixture-root") =>
+        {
+            run_maintenance_plan(Path::new(root))
+        }
         _ => {
             print_usage();
             ExitCode::from(2)
+        }
+    }
+}
+
+/// `ChatGPT-Fix-Packer maintenance-plan --fixture-root <path>`.
+///
+/// A1 dry-run: emits a `chatgpt_fix.maintenance_plan.v1` receipt listing only
+/// authorized would-do items; A7/A8/A9 actions are marked blocked. No file is
+/// modified.
+fn run_maintenance_plan(root: &Path) -> ExitCode {
+    match chatgpt_fix_core::generate_maintenance_plan(root) {
+        Ok(plan) => match plan.to_json() {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("maintenance plan serialize failed: {err}");
+                ExitCode::from(4)
+            }
+        },
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::from(3)
         }
     }
 }
@@ -182,6 +212,7 @@ fn print_usage() {
     eprintln!("       {PRODUCT_NAME} plan --live-readonly");
     eprintln!("       {PRODUCT_NAME} stage --probe-json <path> --out <staging-root>");
     eprintln!("       {PRODUCT_NAME} verify --staging <path>");
+    eprintln!("       {PRODUCT_NAME} maintenance-plan --fixture-root <path>");
 }
 
 /// Run a live pwsh probe and return the canonical inspection JSON.
