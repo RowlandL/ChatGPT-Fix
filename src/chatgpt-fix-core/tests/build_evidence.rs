@@ -3,25 +3,25 @@ use std::path::{Path, PathBuf};
 
 use chatgpt_fix_core::{ReceiptV1, SafeRelativePath, Sha256Digest, sha256_bytes};
 
-const SOURCE_COMMIT: &str = "ad6ff3b22db1f3c9405f771a99c1dd90bc5db9eb";
+const SOURCE_COMMIT: &str = "89543eb8c87d5f47a4b5563ea8c1d27d0674769d";
 const TOOLCHAIN: &str = "rustc 1.97.1 (8bab26f4f 2026-07-14); x86_64-pc-windows-msvc";
-const RELEASE_DIR: &str = "records/builds/0.3.0-win-x64";
+const RELEASE_DIR: &str = "records/builds/0.4.0-win-x64";
 
 const ARTIFACTS: [(&str, u64, &str); 3] = [
     (
         "ChatGPT-Fix-Launcher.exe",
-        246_272,
-        "8453683bf51ff14f1128f17afa99359a635dc82ef296b03f340237c255260ff3",
+        247_296,
+        "cc28a185cc08096457a199af5069fc2d069b943243f4089a08414f2aa0a8751a",
     ),
     (
         "ChatGPT-Fix-Manager.exe",
-        233_472,
-        "931a40f845833290bfb4be349247d727a75e57132813d27fea368db1d7c81cad",
+        286_208,
+        "42f0159e7edbdb82431e498cea53ca2ee79419bed4dd03ddd2396bdf9d26ba10",
     ),
     (
         "ChatGPT-Fix-Packer.exe",
-        233_984,
-        "58d1a545ebea362d257220443f4fda680b96e7bf427c7918e9a90a3cf8895c66",
+        311_808,
+        "311331b3748eea52c37d7af961913f3459ea52bcc730600351f405911d05b815",
     ),
 ];
 
@@ -40,19 +40,19 @@ fn tracked_build_evidence_is_exact_and_self_consistent() {
         build_plan_text,
         concat!(
             "schema=chatgpt_fix.build_plan.v1\n",
-            "version=0.3.0\n",
+            "version=0.4.0\n",
             "target=x86_64-pc-windows-msvc\n",
             "profile=release\n",
-            "source_commit=ad6ff3b22db1f3c9405f771a99c1dd90bc5db9eb\n",
-            "chatgpt_fix_source_commit=ad6ff3b22db1f3c9405f771a99c1dd90bc5db9eb\n",
-            "cargo_lock_sha256=ca9631f717ecd82f4a86c866a4976b3fe02cd76db00c421b830d9da957345f7c\n",
+            "source_commit=89543eb8c87d5f47a4b5563ea8c1d27d0674769d\n",
+            "chatgpt_fix_source_commit=89543eb8c87d5f47a4b5563ea8c1d27d0674769d\n",
+            "cargo_lock_sha256=d35112d2f419c8eb673d1f05603aa5b0546481c729165beac3b97033ddb14e56\n",
             "rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)\n",
             "cargo=cargo 1.97.1 (c980f4866 2026-06-30)\n",
             "command=cargo build --offline --locked --workspace --release --target x86_64-pc-windows-msvc\n",
             "cargo_net_offline=true\n",
-            "cargo_home=out/0.3.0/cargo-home\n",
-            "cargo_target_dir=out/0.3.0/cargo-target\n",
-            "artifact_dir=out/0.3.0/win-x64\n",
+            "cargo_home=out/0.4.0/cargo-home\n",
+            "cargo_target_dir=out/0.4.0/cargo-target\n",
+            "artifact_dir=out/0.4.0/win-x64\n",
             "signing_status=unsigned\n",
         )
     );
@@ -60,10 +60,10 @@ fn tracked_build_evidence_is_exact_and_self_consistent() {
 
     let expected_checksums = ARTIFACTS
         .iter()
-        .map(|(name, _, sha256)| format!("{sha256}  out/0.3.0/win-x64/{name}\n"))
+        .map(|(name, _, sha256)| format!("{sha256}  out/0.4.0/win-x64/{name}\n"))
         .collect::<String>();
     assert_eq!(
-        fs::read_to_string(root.join("checksums/0.3.0-win-x64.sha256"))
+        fs::read_to_string(root.join("checksums/0.4.0-win-x64.sha256"))
             .expect("read release checksums"),
         expected_checksums
     );
@@ -74,7 +74,7 @@ fn tracked_build_evidence_is_exact_and_self_consistent() {
             status: "success".to_owned(),
             plan_sha256: plan_sha256.clone(),
             artifact: Some(
-                SafeRelativePath::parse(&format!("out/0.3.0/win-x64/{name}"))
+                SafeRelativePath::parse(&format!("out/0.4.0/win-x64/{name}"))
                     .expect("artifact path must be safe"),
             ),
             artifact_sha256: Some(
@@ -97,13 +97,13 @@ fn tracked_build_evidence_is_exact_and_self_consistent() {
         licenses.lines().collect::<Vec<_>>(),
         [
             "schema=chatgpt_fix.dependency_licenses.v1",
-            "release=0.3.0",
-            "source_commit=ad6ff3b22db1f3c9405f771a99c1dd90bc5db9eb",
+            "release=0.4.0",
+            "source_commit=89543eb8c87d5f47a4b5563ea8c1d27d0674769d",
             "third_party_cargo_packages=0",
-            "workspace_package=chatgpt-fix-core@0.3.0|license=NOASSERTION",
-            "workspace_package=chatgpt-fix-launcher@0.3.0|license=NOASSERTION",
-            "workspace_package=chatgpt-fix-manager@0.3.0|license=NOASSERTION",
-            "workspace_package=chatgpt-fix-packer@0.3.0|license=NOASSERTION",
+            "workspace_package=chatgpt-fix-core@0.4.0|license=NOASSERTION",
+            "workspace_package=chatgpt-fix-launcher@0.4.0|license=NOASSERTION",
+            "workspace_package=chatgpt-fix-manager@0.4.0|license=NOASSERTION",
+            "workspace_package=chatgpt-fix-packer@0.4.0|license=NOASSERTION",
             "toolchain_component=rust-standard-library@1.97.1|license=Apache-2.0 OR MIT",
             "note=Cargo.lock contains only workspace packages; no third-party Cargo crate is redistributed.",
         ]

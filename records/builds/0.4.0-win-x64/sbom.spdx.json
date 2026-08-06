@@ -1,0 +1,180 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "ChatGPT-Fix-0.4.0-win-x64",
+  "documentNamespace": "https://chatgpt-fix.local/spdx/0.4.0/89543eb8c87d5f47a4b5563ea8c1d27d0674769d",
+  "creationInfo": {
+    "created": "2026-08-06T14:47:00Z",
+    "creators": [
+      "Tool: ChatGPT-Fix-P2-offline-build"
+    ]
+  },
+  "packages": [
+    {
+      "name": "chatgpt-fix-core",
+      "SPDXID": "SPDXRef-Package-Core",
+      "versionInfo": "0.4.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "chatgpt-fix-launcher",
+      "SPDXID": "SPDXRef-Package-Launcher",
+      "versionInfo": "0.4.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "chatgpt-fix-manager",
+      "SPDXID": "SPDXRef-Package-Manager",
+      "versionInfo": "0.4.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "chatgpt-fix-packer",
+      "SPDXID": "SPDXRef-Package-Packer",
+      "versionInfo": "0.4.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "rust-standard-library",
+      "SPDXID": "SPDXRef-Package-RustStd",
+      "versionInfo": "1.97.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0 OR MIT",
+      "licenseDeclared": "Apache-2.0 OR MIT",
+      "copyrightText": "NOASSERTION"
+    }
+  ],
+  "files": [
+    {
+      "fileName": "out/0.4.0/win-x64/ChatGPT-Fix-Launcher.exe",
+      "SPDXID": "SPDXRef-File-Launcher",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "cc28a185cc08096457a199af5069fc2d069b943243f4089a08414f2aa0a8751a"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "fileName": "out/0.4.0/win-x64/ChatGPT-Fix-Manager.exe",
+      "SPDXID": "SPDXRef-File-Manager",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "42f0159e7edbdb82431e498cea53ca2ee79419bed4dd03ddd2396bdf9d26ba10"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "fileName": "out/0.4.0/win-x64/ChatGPT-Fix-Packer.exe",
+      "SPDXID": "SPDXRef-File-Packer",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "311331b3748eea52c37d7af961913f3459ea52bcc730600351f405911d05b815"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-Core"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-Launcher"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-Manager"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-Packer"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-RustStd"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-Launcher",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-Core"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-Manager",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-Core"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-Packer",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-Core"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-Core",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-RustStd"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-Launcher",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-RustStd"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-Manager",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-RustStd"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-Packer",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-RustStd"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-Launcher",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-Launcher"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-Manager",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-Manager"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-Packer",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-Packer"
+    }
+  ]
+}
