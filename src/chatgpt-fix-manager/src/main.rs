@@ -495,6 +495,39 @@ fn run_ntc_ensure(root: &Path) -> ExitCode {
 /// redistribute the script inside the release — this is a local fetch.
 const NTC_USERSCRIPT_URL: &str = "https://raw.githubusercontent.com/Tianzora/codex-token-cost/v0.7.9/scripts/codex-live-token-cost.js";
 
+/// Locate a usable PowerShell executable: try pwsh.exe (PowerShell 7) first,
+/// then fall back to powershell.exe (Windows PowerShell).
+fn find_powershell() -> String {
+    for name in &["pwsh.exe", "powershell.exe"] {
+        if which(name).is_some() {
+            return name.to_string();
+        }
+    }
+    "powershell.exe".to_owned()
+}
+
+/// Minimal `which` for Windows: checks PATH and the standard System32 dir.
+fn which(exe: &str) -> Option<String> {
+    if let Ok(paths) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&paths) {
+            let candidate = dir.join(exe);
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+    }
+    let sys32 = PathBuf::from(
+        std::env::var("SystemRoot")
+            .unwrap_or_else(|_| "C:\\Windows".to_owned()),
+    )
+    .join("System32")
+    .join(exe);
+    if sys32.is_file() {
+        return Some(sys32.to_string_lossy().into_owned());
+    }
+    None
+}
+
 /// Ensure the token-cost userscript exists at `dst`:
 ///
 /// 1) already present;
@@ -539,7 +572,8 @@ fn ensure_userscript(dst: &Path) -> bool {
         return false;
     }
     let quoted = dst.to_string_lossy().replace('\'', "''");
-    let ok = std::process::Command::new("powershell.exe")
+    let ps = find_powershell();
+    let ok = std::process::Command::new(&ps)
         .args([
             "-NoProfile",
             "-NonInteractive",

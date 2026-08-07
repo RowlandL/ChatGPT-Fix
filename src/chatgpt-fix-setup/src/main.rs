@@ -11,6 +11,43 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const PRODUCT_NAME: &str = "ChatGPT-Fix-Setup";
+
+/// Locate a usable PowerShell executable: try pwsh.exe (PowerShell 7) first,
+/// then fall back to powershell.exe (Windows PowerShell). Returns the first
+/// one found on PATH, or "powershell.exe" as the ultimate fallback.
+fn find_powershell() -> String {
+    for name in &["pwsh.exe", "powershell.exe"] {
+        if which(name).is_some() {
+            return name.to_string();
+        }
+    }
+    // Ultimate fallback: Windows ships powershell.exe in a well-known path.
+    "powershell.exe".to_owned()
+}
+
+/// Minimal `which` for Windows: checks PATH and the standard System32 dir.
+fn which(exe: &str) -> Option<String> {
+    // Check each directory in PATH.
+    if let Ok(paths) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&paths) {
+            let candidate = dir.join(exe);
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+    }
+    // Also check System32 (the canonical location for powershell.exe).
+    let sys32 = PathBuf::from(
+        std::env::var("SystemRoot")
+            .unwrap_or_else(|_| "C:\\Windows".to_owned()),
+    )
+    .join("System32")
+    .join(exe);
+    if sys32.is_file() {
+        return Some(sys32.to_string_lossy().into_owned());
+    }
+    None
+}
 const INSTALL_SUBDIR: &str = "ChatGPT-Fix";
 const BIN_SUBDIR: &str = "bin";
 const BACKUPS_SUBDIR: &str = "backups";
@@ -400,7 +437,8 @@ fn complete_one_click_config(root: &Path, launcher: &Path, progress: &dyn Fn(u64
 
     // 1. Detect the official package install location via Get-AppxPackage.
     let mut app_root: Option<String> = None;
-    if let Ok(output) = std::process::Command::new("powershell.exe")
+    let ps = find_powershell();
+    if let Ok(output) = std::process::Command::new(&ps)
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -510,7 +548,7 @@ fn complete_one_click_config(root: &Path, launcher: &Path, progress: &dyn Fn(u64
         fallback_exe.unwrap_or_default()
     };
 
-    let ps = format!(
+    let ps_args = format!(
         "$sh = New-Object -ComObject WScript.Shell; try {{ $s1 = $sh.CreateShortcut('{}'); $s1.TargetPath = 'C:\\Windows\\explorer.exe'; $s1.Arguments = '{}'; $s1.WorkingDirectory = 'C:\\Windows'; $s1.Description = 'ChatGPT (official)'; $s1.IconLocation = '{}'; $s1.Save(); if (-not (Test-Path -LiteralPath '{}')) {{ throw 'ChatGPT.lnk not created' }} }} catch {{ Write-Error $_; exit 1 }}; try {{ $s2 = $sh.CreateShortcut('{}'); $s2.TargetPath = '{}'; $s2.WorkingDirectory = '{}'; $s2.Description = 'ChatGPT-Fix-Launcher (wrapper)'; $s2.IconLocation = '{}'; $s2.Save(); if (-not (Test-Path -LiteralPath '{}')) {{ throw 'Launcher.lnk not created' }} }} catch {{ Write-Error $_; exit 1 }}",
         lnk_chatgpt.to_string_lossy().replace('\'', "''"),
         AUMID.replace('\'', "''"),
@@ -526,8 +564,8 @@ fn complete_one_click_config(root: &Path, launcher: &Path, progress: &dyn Fn(u64
     // app can prevent Save); only then report failure.
     let mut created_ok = false;
     for attempt in 0..2 {
-        if let Ok(output) = std::process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
+        if let Ok(output) = std::process::Command::new(&ps)
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_args])
             .output()
         {
             if output.status.success() && lnk_chatgpt.exists() && lnk_launcher.exists() {

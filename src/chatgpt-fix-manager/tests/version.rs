@@ -10,7 +10,7 @@ fn prints_exact_version() {
         .expect("run chatgpt-fix-manager");
 
     assert_eq!(output.status.code(), Some(0), "stderr: {:?}", output.stderr);
-    assert_eq!(output.stdout, b"ChatGPT-Fix-Manager 1.0.0\n");
+    assert_eq!(output.stdout, b"ChatGPT-Fix-Manager 1.0.1\n");
     assert!(output.stderr.is_empty(), "stderr: {:?}", output.stderr);
 }
 

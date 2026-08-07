@@ -16,3 +16,6 @@ credentials/
 .squad/
 locks/*.receive.lock
 /out/
+
+# Rust build artifacts
+/target/

@@ -5,7 +5,7 @@
 //!
 //! Layout:
 //!   [ ChatGPT-Fix 安装程序 ]          (window title)
-//!   ChatGPT-Fix 1.0.0                (product label)
+//!   ChatGPT-Fix 1.0.1                (product label)
 //!   将把官方 ChatGPT 桌面版复制到用户目录运行…… (guide text)
 //!   [ status text ]                  (status label)
 //!   [==============progress========] (progress bar)
@@ -103,12 +103,15 @@ fn is_admin() -> bool {
 /// ran as administrator because copying the official package out of
 /// WindowsApps requires directory access privileges (the initial logs show
 /// FAIL_UNAUTHORIZEDACCESSEXCEPTION before elevation succeeded).
-fn elevate_and_restart() {
+///
+/// Returns `true` when the elevated process was launched, `false` when the
+/// user cancelled the UAC prompt or elevation failed.
+fn elevate_and_restart() -> bool {
     let exe = std::env::current_exe().unwrap_or_default();
     let exe_w = to_w(&exe.to_string_lossy());
     let args = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
     let args_w = to_w(&args);
-    unsafe {
+    let result = unsafe {
         ShellExecuteW(
             ptr::null_mut(),
             to_w("runas").as_ptr(),
@@ -116,8 +119,10 @@ fn elevate_and_restart() {
             args_w.as_ptr(),
             ptr::null(),
             5, // SW_SHOWNORMAL
-        );
-    }
+        )
+    };
+    // ShellExecuteW returns a value > 32 on success.
+    (result as usize) > 32
 }
 
 const PBM_SETRANGE: u32 = 0x0401;
@@ -393,8 +398,11 @@ pub fn run_gui_install() -> std::process::ExitCode {
     // of WindowsApps fails with an access-denied error.
     // CHATGPT_FIX_SETUP_NO_ELEVATE=1 skips elevation (tests / explicit).
     if !is_admin() && std::env::var_os("CHATGPT_FIX_SETUP_NO_ELEVATE").is_none() {
-        elevate_and_restart();
-        return std::process::ExitCode::SUCCESS;
+        if elevate_and_restart() {
+            return std::process::ExitCode::SUCCESS;
+        }
+        // UAC cancelled or failed; continue in non-elevated mode.
+        // The GUI will show a warning but the user can still retry.
     }
     unsafe {
         let hinst = GetModuleHandleW(ptr::null());
