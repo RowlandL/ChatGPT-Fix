@@ -62,6 +62,38 @@ fn require_verified_baseline(baseline_root: &Path) -> Result<(), ContractError> 
     Ok(())
 }
 
+/// Fast-path baseline check for the LAUNCH path: a full `StagingV1` parse
+/// walks the entire per-file hash manifest (thousands of entries), which adds
+/// startup latency for no launch-time benefit. This version only verifies the
+/// schema marker and the `state=verified` flag by substring scan on the raw
+/// JSON. `activate` still uses the strict full-parse variant.
+fn require_verified_baseline_fast(baseline_root: &Path) -> Result<(), ContractError> {
+    let state_path = baseline_root.join("state.json");
+    let bytes = fs::read(&state_path).map_err(|error| {
+        contract_error(
+            "baseline_state_unreadable",
+            "baseline_root",
+            format!("baseline state.json cannot be read: {error}"),
+        )
+    })?;
+    let text = String::from_utf8_lossy(&bytes);
+    if !text.contains("\"schema\":\"chatgpt_fix.staging.v1\"") {
+        return Err(contract_error(
+            "baseline_state_invalid",
+            "baseline_root",
+            "baseline state.json schema is not chatgpt_fix.staging.v1",
+        ));
+    }
+    if !text.contains("\"state\":\"verified\"") {
+        return Err(contract_error(
+            "baseline_not_verified",
+            "baseline_root",
+            "baseline is not verified",
+        ));
+    }
+    Ok(())
+}
+
 /// Atomically replace a pointer file: write to a sibling `.tmp` then
 /// `fs::rename`. A failed write leaves the previous pointer untouched.
 fn atomic_write_pointer(pointer_path: &Path, content: &str) -> Result<(), ContractError> {
@@ -497,8 +529,9 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<(LaunchV1, Option<u32>
     // Fail-closed: only launch from a verified immutable baseline (state.json
     // with state=verified). A pointer written by an out-of-band path (e.g.
     // pointing directly at WindowsApps) is rejected here — the guard that
-    // keeps the NTFS-fix launch path intact.
-    require_verified_baseline(baseline)?;
+    // keeps the NTFS-fix launch path intact. Fast substring check (no full
+    // manifest parse) to keep startup latency low.
+    require_verified_baseline_fast(baseline)?;
     let mut executable = baseline.join("ChatGPT.exe");
     if !executable.is_file() {
         let nested = baseline.join("app").join("ChatGPT.exe");
@@ -575,6 +608,30 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<(LaunchV1, Option<u32>
     command
         .current_dir(baseline)
         .arg(format!("--user-data-dir={}", profile_dir.to_string_lossy()));
+    // Diagnostic: capture the app's stderr (GUI exe has no console) so
+    // loader/overlay errors (e.g. "[ntc] loader failed") are visible in
+    // <baseline>/logs/chatgpt-stderr.log. Rotate at 10 MB (keep the previous
+    // generation as .old) so a long-running app cannot grow the file forever.
+    let stderr_log = baseline.join("logs").join("chatgpt-stderr.log");
+    if let Some(dir) = stderr_log.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    const MAX_STDERR_LOG_BYTES: u64 = 10 * 1024 * 1024;
+    if let Ok(metadata) = fs::metadata(&stderr_log)
+        && metadata.len() > MAX_STDERR_LOG_BYTES
+    {
+        let _ = fs::rename(
+            &stderr_log,
+            baseline.join("logs").join("chatgpt-stderr.log.old"),
+        );
+    }
+    if let Ok(file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&stderr_log)
+    {
+        command.stderr(std::process::Stdio::from(file));
+    }
     let child = command.spawn().map_err(|error| {
         contract_error(
             "launch_spawn_failed",

@@ -96,19 +96,29 @@ function main() {
     const mainEntry = pkg.main || ".vite/build/early-bootstrap.js";
     const entryPath = path.join(work, mainEntry);
     if (!fs.existsSync(entryPath)) fail("main entry not found: " + mainEntry);
+    // Inline the userscript source and execute it DIRECTLY via
+    // contents.executeJavaScript: the page CSP forbids inline <script>
+    // (script-src 'self' 'sha256-...' 'wasm-unsafe-eval', no unsafe-inline),
+    // which blocks any s.textContent approach. executeJavaScript is a
+    // privileged main-process API and bypasses CSP. The userscript is an
+    // IIFE that calls scheduleStart() itself, so no host is needed.
+    const userscriptContent = fs.readFileSync(userscript, "utf8");
     const loader = [
       "// NTC-NATIVE-20260801 loader (launcher-owned overlay)",
       "try {",
-      "  const { webFrame } = require('electron');",
-      "  webFrame.executeJavaScript(`",
-      "    (() => {",
-      "      const s = document.createElement('script');",
-      "      s.type = 'text/javascript';",
-      "      s.src = 'app://-resources/native-token-cost/codex-live-token-cost.js';",
-      "      s.setAttribute('data-ntc', '1');",
-      "      (document.head || document.documentElement).appendChild(s);",
-      "    })();",
-      "  `, true);",
+      "  console.error('[ntc] loader loaded in main process');",
+      "  const { app } = require('electron');",
+      "  app.whenReady().then(() => {",
+      "    app.on('web-contents-created', (_e, contents) => {",
+      "      contents.on('did-finish-load', () => {",
+      "        try {",
+      "          contents.executeJavaScript(" +
+        JSON.stringify(userscriptContent) +
+        ", true).catch(() => {});",
+      "        } catch (e) { console.error('[ntc] loader failed', e); }",
+      "      });",
+      "    });",
+      "  });",
       "} catch (e) { console.error('[ntc] loader failed', e); }",
       "",
     ].join("\n");
