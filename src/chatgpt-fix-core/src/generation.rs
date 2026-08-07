@@ -449,7 +449,14 @@ pub fn write_shortcut_json(
 ///
 /// A4a-authorized. This is the real launch path (P4-era live launch);
 /// it supersedes the P1 fail-closed stub once a pointer exists.
-pub fn launch_from_pointer(program_root: &Path) -> Result<LaunchV1, ContractError> {
+/// Resolve the current pointer and, when the target baseline is verified and
+/// no instance is already running, launch the isolated ChatGPT.exe.
+///
+/// Returns `(launch_receipt, spawned_pid)`: `spawned_pid` is `Some` only when
+/// this call actually spawned a new instance (resident launcher mode should
+/// then hold the Job and wait for it to exit); it is `None` for the
+/// single-instance reuse path and for any fail-closed outcome.
+pub fn launch_from_pointer(program_root: &Path) -> Result<(LaunchV1, Option<u32>), ContractError> {
     use std::process::Command;
 
     let pointer_text = read_pointer(program_root)?;
@@ -513,11 +520,14 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<LaunchV1, ContractErro
     // window to the foreground so the user sees feedback (instead of the
     // launcher silently doing nothing).
     if chatgpt_process_running() {
-        // Activate the running app window via its AUMID so the user sees the
-        // existing ChatGPT window pop to the front.
-        let _ = Command::new("explorer.exe")
-            .arg("shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App")
-            .spawn();
+        // Bring the running app window to the foreground so the user sees
+        // feedback. The AUMID launch (shell:AppsFolder) only works for
+        // MSIX-registered apps; a user-owned baseline copy is not registered,
+        // so we enumerate top-level windows instead. Best-effort.
+        #[cfg(windows)]
+        {
+            let _ = crate::win32::activate_chatgpt_window();
+        }
         let launch = LaunchV1 {
             launch_id: format!(
                 "live-{}",
@@ -547,14 +557,14 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<LaunchV1, ContractErro
             reason: None,
         };
         launch.validate()?;
-        return Ok(launch);
+        return Ok((launch, None));
     }
 
     // Launch detached: the launcher does not wait for the app to exit.
     // Dropping the Child handle detaches it — the process keeps running
     // independently (on Windows, dropping without wait leaves the child
     // alive; never call kill() here).
-    let _child = Command::new(&executable)
+    let child = Command::new(&executable)
         .current_dir(baseline)
         .spawn()
         .map_err(|error| {
@@ -564,8 +574,21 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<LaunchV1, ContractErro
                 format!("cannot launch ChatGPT.exe: {error}"),
             )
         })?;
+    let spawned_pid = child.id();
+    // Job ownership (plan P4/P5): assign the root child into a Job so the
+    // launcher owns the app tree for its lifetime. The Job handle is parked
+    // in a static (hold_job) and reclaimed by the OS when the launcher exits;
+    // KILL_ON_JOB_CLOSE is deliberately not set.
+    #[cfg(windows)]
+    {
+        if let Some(job) = crate::win32::create_job()
+            && crate::win32::assign_process_to_job(job, spawned_pid)
+        {
+            crate::win32::hold_job(job);
+        }
+    }
     // Detach: the Child is dropped without wait/kill; the app keeps running.
-    drop(_child);
+    drop(child);
 
     // Relative executable path for the launch receipt (safe, portable).
     let rel = executable
@@ -596,7 +619,7 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<LaunchV1, ContractErro
         reason: None,
     };
     launch.validate()?;
-    Ok(launch)
+    Ok((launch, Some(spawned_pid)))
 }
 
 /// Returns true when at least one ChatGPT.exe process is already running

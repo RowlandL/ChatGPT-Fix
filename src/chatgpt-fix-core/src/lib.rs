@@ -16,6 +16,8 @@ mod schema;
 mod sha256;
 mod shutdown;
 mod staging;
+#[cfg(windows)]
+pub mod win32;
 
 pub use config::{config_apply, config_plan, config_rollback, parse_config_proposal};
 pub use doctor::{DOCTOR_SCHEMA, DoctorFinding, DoctorLevel, DoctorStatus, DoctorV2};
@@ -47,6 +49,8 @@ pub use schema::{
 pub use sha256::sha256_bytes;
 pub use shutdown::shutdown_process_tree;
 pub use staging::{read_staging_state, stage_from_probe, verify_staging};
+#[cfg(windows)]
+pub use win32::activate_chatgpt_window;
 
 /// Current UTC time formatted as an RFC 3339 timestamp with Z suffix.
 ///

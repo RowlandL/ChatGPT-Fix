@@ -78,8 +78,8 @@ fn main() -> ExitCode {
 /// update (new version directory) never breaks the launch. Writes a launch
 /// receipt to stdout. A4a-authorized.
 fn run_live_launch(program_root: &Path) -> ExitCode {
-    let launch = match chatgpt_fix_core::launch_from_pointer(program_root) {
-        Ok(launch) => launch,
+    let (launch, spawned_pid) = match chatgpt_fix_core::launch_from_pointer(program_root) {
+        Ok(pair) => pair,
         Err(error) => {
             eprintln!("{error}");
             return ExitCode::from(3);
@@ -88,6 +88,16 @@ fn run_live_launch(program_root: &Path) -> ExitCode {
     match launch.to_json() {
         Ok(json) => {
             println!("{json}");
+            // Resident mode (plan P4/P5): when we actually spawned a new
+            // instance, hold the Job and stay alive until the root child
+            // exits. This keeps Job ownership for the app's whole lifetime.
+            // The single-instance reuse path returns None and exits quickly.
+            if let Some(pid) = spawned_pid {
+                #[cfg(windows)]
+                {
+                    let _ = chatgpt_fix_core::win32::wait_for_process(pid);
+                }
+            }
             ExitCode::SUCCESS
         }
         Err(error) => {
