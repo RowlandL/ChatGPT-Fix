@@ -13,6 +13,15 @@ using System.Security.Cryptography;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
+// Product identity for the published artifact: the PE version resource
+// (file properties) comes from these assembly attributes, so the Setup
+// exe reports 1.0.1 just like VERSION and the registry DisplayVersion.
+[assembly: System.Reflection.AssemblyVersion("1.0.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.0.1.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.0.1")]
+[assembly: System.Reflection.AssemblyProduct("ChatGPT-Fix")]
+[assembly: System.Reflection.AssemblyTitle("ChatGPT-Fix Setup")]
+
 namespace ChatGPTFixSetup
 {
     public class SetupForm : Form
@@ -133,7 +142,7 @@ namespace ChatGPTFixSetup
 
         public SetupForm()
         {
-            Text = "ChatGPT-Fix 安装程序";
+            Text = "ChatGPT-Fix 安装程序 v1.0.1";
             ClientSize = new Size(500, 250);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -277,7 +286,12 @@ namespace ChatGPTFixSetup
                 string exeDir = Path.GetDirectoryName(
                     System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".";
                 string binDir2 = Path.Combine(installRoot, "bin");
-                string[] rustBins = { "ChatGPT-Fix-Launcher.exe", "ChatGPT-Fix-Manager.exe", "ChatGPT-Fix-Packer.exe" };
+                // Setup.exe is deployed too: the registry UninstallString
+                // points at bin\ChatGPT-Fix-Setup.exe, so a missing copy made
+                // "Settings > Apps > Uninstall" fail on real machines. The
+                // uninstall path already handles self-delete (marker) for the
+                // running copy.
+                string[] rustBins = { "ChatGPT-Fix-Launcher.exe", "ChatGPT-Fix-Manager.exe", "ChatGPT-Fix-Packer.exe", "ChatGPT-Fix-Setup.exe" };
                 int missingBins = 0;
                 foreach (string name in rustBins)
                 {
