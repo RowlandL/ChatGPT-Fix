@@ -128,6 +128,84 @@ fn activate_refuses_unverified_baseline() {
 }
 
 #[test]
+fn launch_from_pointer_accepts_initial_installer_schema() {
+    // The initial (pre-refactor) installer writes
+    // codex.ntfs.setup-state.v1 + ExperimentalMitigation=true instead of
+    // chatgpt_fix.staging.v1 + state=verified. The launch path must accept
+    // both, so an existing initial-install baseline can be launched by the
+    // current launcher without reinstalling.
+    use chatgpt_fix_core::launch_from_pointer;
+
+    let root = program_root("legacy-schema");
+    let baseline = root.join("baseline");
+    fs::create_dir_all(&baseline).expect("create baseline");
+    // Minimal official-package layout: the launcher accepts either
+    // <root>/ChatGPT.exe or <root>/app/ChatGPT.exe; use the nested app/
+    // layout. cmd.exe is used as a stand-in so the spawn actually succeeds
+    // on Windows (a placeholder text file is not executable).
+    let app_dir = baseline.join("app");
+    fs::create_dir_all(&app_dir).expect("create app dir");
+    let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_owned());
+    fs::copy(
+        PathBuf::from(&system_root).join("System32").join("cmd.exe"),
+        app_dir.join("ChatGPT.exe"),
+    )
+    .expect("copy cmd.exe as stand-in ChatGPT.exe");
+    // Initial installer state.json shape (exact field names from the v1
+    // installer: "Schema" capitalised, ExperimentalMitigation boolean).
+    fs::write(
+        baseline.join("state.json"),
+        r#"{"Schema":"codex.ntfs.setup-state.v1","ExperimentalMitigation":true,"InstallRoot":"C:\\x","ProfilePath":"C:\\x\\profile","SourceAppPath":"C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.707.8479.0_x64__2p2nqsd0c76g0\\app","SourcePackageRoot":"C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.707.8479.0_x64__2p2nqsd0c76g0","SourcePackageVersion":"26.707.8479.0","ChatGptSha256":"28C3E8B6C55FFF39ECB12A5EB27F493ABF997804247517AA7A46C277CA5D9E93","AppAsarSha256":"8DDC04D44985CA64D59097A76E5871C1010EEB94D7305FD61C5B3F111D452DFF","LastBackupPath":"C:\\x\\backups\\20260714T022028604Z","InstalledAtUtc":"2026-07-14T02:22:57Z","SourceTrustStatus":"REGISTERED_MSIX","SourceTrustBasis":"PACKAGE_REGISTRATION_AND_IDENTITY"}"#,
+    )
+    .expect("write initial-installer state.json");
+    // Pointer written by the initial installer pointing at this baseline.
+    fs::write(
+        root.join("current.json"),
+        format!(
+            r#"{{"schema":"chatgpt_fix.pointer.v1","baseline_root":"{}"}}"#,
+            baseline.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .expect("write pointer");
+
+    let (launch, _) = launch_from_pointer(&root).expect("legacy-schema baseline must launch");
+    assert!(
+        launch.executable.as_str().ends_with("app/ChatGPT.exe"),
+        "executable must resolve under app/: {}",
+        launch.executable.as_str()
+    );
+}
+
+#[test]
+fn launch_from_pointer_rejects_unverified_legacy_schema() {
+    // Same legacy schema but mitigation disabled: must fail closed.
+    use chatgpt_fix_core::launch_from_pointer;
+
+    let root = program_root("legacy-unverified");
+    let baseline = root.join("baseline");
+    fs::create_dir_all(&baseline.join("app")).expect("create app dir");
+    fs::write(baseline.join("app/ChatGPT.exe"), b"x").expect("write fake exe");
+    // Note: this baseline is rejected before spawn, so the placeholder is
+    // never executed; a text file is fine here.
+    fs::write(
+        baseline.join("state.json"),
+        r#"{"Schema":"codex.ntfs.setup-state.v1","ExperimentalMitigation":false}"#,
+    )
+    .expect("write disabled state");
+    fs::write(
+        root.join("current.json"),
+        format!(
+            r#"{{"schema":"chatgpt_fix.pointer.v1","baseline_root":"{}"}}"#,
+            baseline.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .expect("write pointer");
+
+    let err = launch_from_pointer(&root).expect_err("must refuse disabled mitigation");
+    assert_eq!(err.code, "baseline_not_verified");
+}
+
+#[test]
 fn rollback_restores_pointer_and_marks_rolled_back() {
     let root = program_root("rollback");
     let generation = activate(&baseline_fixture(), &root, fixture_shortcut(), false)

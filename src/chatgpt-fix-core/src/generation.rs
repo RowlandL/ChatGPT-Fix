@@ -67,6 +67,13 @@ fn require_verified_baseline(baseline_root: &Path) -> Result<(), ContractError> 
 /// startup latency for no launch-time benefit. This version only verifies the
 /// schema marker and the `state=verified` flag by substring scan on the raw
 /// JSON. `activate` still uses the strict full-parse variant.
+///
+/// Compatibility: the initial (pre-refactor) installer writes
+/// `codex.ntfs.setup-state.v1` + `ExperimentalMitigation:true` instead of the
+/// `chatgpt_fix.staging.v1` + `state=verified` pair. Both mark a baseline that
+/// was produced by an installer with an immutable copy of the official
+/// package, so the launch path accepts either schema. Kept as a substring
+/// scan (no full manifest parse) to preserve launch-time latency.
 fn require_verified_baseline_fast(baseline_root: &Path) -> Result<(), ContractError> {
     let state_path = baseline_root.join("state.json");
     let bytes = fs::read(&state_path).map_err(|error| {
@@ -77,18 +84,32 @@ fn require_verified_baseline_fast(baseline_root: &Path) -> Result<(), ContractEr
         )
     })?;
     let text = String::from_utf8_lossy(&bytes);
-    if !text.contains("\"schema\":\"chatgpt_fix.staging.v1\"") {
-        return Err(contract_error(
-            "baseline_state_invalid",
-            "baseline_root",
-            "baseline state.json schema is not chatgpt_fix.staging.v1",
-        ));
-    }
-    if !text.contains("\"state\":\"verified\"") {
+    // Whitespace-normalised copy: JSON allows arbitrary whitespace around
+    // `:` and `,`, so an installer that writes `"Schema" : "..."` must not
+    // fail this fast-path check. Schema marker fields contain no
+    // whitespace, so compacting is safe and keeps the scan O(n) (no full
+    // manifest parse).
+    let compact = text
+        .chars()
+        .filter(|c| !c.is_ascii_whitespace())
+        .collect::<String>();
+    // Modern schema (chatgpt_fix.staging.v1) must carry state=verified.
+    let staging_v1 = compact.contains("\"schema\":\"chatgpt_fix.staging.v1\"")
+        && compact.contains("\"state\":\"verified\"");
+    // Initial installer schema (codex.ntfs.setup-state.v1) is verified when
+    // the mitigation flag is on. Both cases require an existing state.json
+    // (a pointer written by an out-of-band path, e.g. directly at WindowsApps,
+    // has neither and is rejected here — the guard that keeps the NTFS-fix
+    // launch path intact).
+    let setup_state_v1 = compact.contains("\"Schema\":\"codex.ntfs.setup-state.v1\"")
+        && compact.contains("\"ExperimentalMitigation\":true");
+    if !staging_v1 && !setup_state_v1 {
         return Err(contract_error(
             "baseline_not_verified",
             "baseline_root",
-            "baseline is not verified",
+            "baseline state.json is not a verified immutable baseline \
+             (expected chatgpt_fix.staging.v1 state=verified or \
+             codex.ntfs.setup-state.v1 ExperimentalMitigation=true)",
         ));
     }
     Ok(())
