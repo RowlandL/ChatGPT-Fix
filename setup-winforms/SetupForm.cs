@@ -8,6 +8,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -25,6 +26,12 @@ namespace ChatGPTFixSetup
         private volatile bool _running;
 
         private const string LocalAppData = @"%LOCALAPPDATA%\Programs\ChatGPT-Fix";
+
+        // True when running as the CLI automation mode (--test-install):
+        // there is no window handle, so ALL UI updates must be skipped
+        // (BeginInvoke on a handle-less control can throw and abort the copy).
+        private static bool _cliMode;
+        internal static void SetCliMode(bool cli) { _cliMode = cli; }
 
         // --- Test hooks (opt-in, default OFF) -------------------------------
         // Two channels (BOTH default OFF, production behaviour unchanged):
@@ -178,7 +185,24 @@ namespace ChatGPTFixSetup
             }).Start();
         }
 
-        private bool DoInstall()
+        internal bool DoInstall()
+        {
+            try
+            {
+                return DoInstallInner();
+            }
+            catch (Exception ex)
+            {
+                LastError = ex.ToString();
+                SetStatus("安装失败：" + ex.Message);
+                return false;
+            }
+        }
+
+        // Last error detail (used by --test-install to write test-install.log).
+        internal string LastError { get; private set; }
+
+        private bool DoInstallInner()
         {
             try
             {
@@ -193,7 +217,7 @@ namespace ChatGPTFixSetup
                 string pkgName = new DirectoryInfo(appRoot).Name;
                 string baseline = Path.Combine(installRoot, "baselines", pkgName);
                 string appDst = Path.Combine(baseline, "app");
-                if (!NeedsCopy(exe, Path.Combine(appDst, "ChatGPT.exe")))
+                if (!NeedsCopy(Path.Combine(appRoot, "app"), appDst))
                 {
                     SetStatus("baseline 已存在且版本一致，跳过复制。");
                 }
@@ -209,12 +233,15 @@ namespace ChatGPTFixSetup
                 // 3. Write pointer + shortcuts + verified state.json.
                 SetStatus("正在创建快捷方式与配置…");
                 Directory.CreateDirectory(installRoot);
+                Directory.CreateDirectory(baseline); // state.json lives here
                 File.WriteAllText(Path.Combine(installRoot, "current.json"),
                     "{\"schema\":\"chatgpt_fix.pointer.v1\",\"baseline_root\":\"" +
                     baseline.Replace("\\", "/") + "\"}\n");
                 // state.json (StagingV1 verified) so the launcher's baseline
-                // check passes. The launcher uses the fast substring check
-                // (schema + state=verified), so a single-entry manifest is fine.
+                // check passes. The manifest now reflects the REAL copied
+                // tree (file count + total bytes) instead of a placeholder
+                // single entry, so a partial copy can never be "verified".
+                var copied = DirStats(appDst);
                 string sha = Sha256(exe);
                 string stateJson =
                     "{\"schema\":\"chatgpt_fix.staging.v1\",\"source_package_full_name\":\"" + pkgName +
@@ -222,7 +249,8 @@ namespace ChatGPTFixSetup
                     new FileInfo(exe).Length + ",\"sha256\":\"" + sha +
                     "\"}],\"staging_root\":\"" + baseline.Replace("\\", "/") +
                     "\",\"baseline_root\":\"" + baseline.Replace("\\", "/") +
-                    "\",\"files_staged\":1,\"total_bytes\":1,\"state\":\"verified\",\"created_at_utc\":\"" +
+                    "\",\"files_staged\":" + copied.Item1 + ",\"total_bytes\":" + copied.Item2 +
+                    ",\"state\":\"verified\",\"created_at_utc\":\"" +
                     DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") + "\"}\n";
                 File.WriteAllText(Path.Combine(baseline, "state.json"), stateJson);
                 CreateShortcuts(installRoot);
@@ -238,9 +266,35 @@ namespace ChatGPTFixSetup
                 SetStep(2);
                 _progress.Value = 100;
 
-                // 4. Launch.
+                // 4. Deploy bin\ (Launcher/Manager/Packer) from the Setup's
+                // own directory, then launch. This makes the single-exe
+                // install actually self-contained: if the 3 Rust binaries
+                // sit next to Setup.exe, they are copied into bin\; if they
+                // are missing, the install FAILS LOUDLY instead of silently
+                // "succeeding" with nothing to launch.
+                string exeDir = Path.GetDirectoryName(
+                    System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".";
+                string binDir2 = Path.Combine(installRoot, "bin");
+                string[] rustBins = { "ChatGPT-Fix-Launcher.exe", "ChatGPT-Fix-Manager.exe", "ChatGPT-Fix-Packer.exe" };
+                int missingBins = 0;
+                foreach (string name in rustBins)
+                {
+                    string srcFile = Path.Combine(exeDir, name);
+                    string dstFile = Path.Combine(binDir2, name);
+                    if (File.Exists(srcFile))
+                    {
+                        try { Directory.CreateDirectory(binDir2); File.Copy(srcFile, dstFile, true); }
+                        catch (Exception bex) { SetStatus("提示：部署 " + name + " 失败（" + bex.Message + "）"); }
+                    }
+                    else if (!File.Exists(dstFile)) missingBins++;
+                }
+                if (missingBins > 0)
+                {
+                    throw new IOException(missingBins + " 个程序文件（Launcher/Manager/Packer）未找到。" +
+                        "请将 4 个 EXE（Setup + 3 个 Rust 程序）放在同一目录后重试。");
+                }
                 SetStatus("正在启动 ChatGPT…");
-                string launcher = Path.Combine(installRoot, "bin", "ChatGPT-Fix-Launcher.exe");
+                string launcher = Path.Combine(binDir2, "ChatGPT-Fix-Launcher.exe");
                 if (File.Exists(launcher))
                     Process.Start(launcher);
                 SetStep(3);
@@ -248,8 +302,10 @@ namespace ChatGPTFixSetup
             }
             catch (Exception ex)
             {
-                SetStatus("安装失败：" + ex.Message);
-                return false;
+                // Re-throw so the OUTER DoInstall() records LastError and
+                // returns false; keeping a local catch here would swallow
+                // the detail (LastError stayed empty in --test-install).
+                throw new IOException("安装失败：" + ex.Message, ex);
             }
         }
 
@@ -436,6 +492,7 @@ namespace ChatGPTFixSetup
 
         private void SetStatus(string text)
         {
+            if (_cliMode) return; // CLI mode: no window, status is a no-op.
             try
             {
                 if (InvokeRequired) BeginInvoke((Action)(() => _status.Text = text));
@@ -447,9 +504,37 @@ namespace ChatGPTFixSetup
             }
         }
 
+        private static string FindPowerShell()
+        {
+            string[] candidates = { "pwsh.exe", "powershell.exe" };
+            foreach (string name in candidates)
+            {
+                string path = FindOnPath(name);
+                if (path != null) return path;
+            }
+            return "powershell.exe";
+        }
+
+        private static string FindOnPath(string exe)
+        {
+            string pathEnv = Environment.GetEnvironmentVariable("PATH");
+            if (pathEnv != null)
+            {
+                foreach (string dir in pathEnv.Split(Path.PathSeparator))
+                {
+                    string candidate = Path.Combine(dir, exe);
+                    if (File.Exists(candidate)) return candidate;
+                }
+            }
+            string sys32 = Path.Combine(
+                Environment.GetEnvironmentVariable("SystemRoot") ?? @"C:\Windows",
+                "System32", exe);
+            return File.Exists(sys32) ? sys32 : null;
+        }
+
         private static string DiscoverPackage()
         {
-            var psi = new ProcessStartInfo("powershell.exe",
+            var psi = new ProcessStartInfo(FindPowerShell(),
                 "-NoProfile -NonInteractive -Command \"(Get-AppxPackage -Name 'OpenAI.Codex' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty InstallLocation)\"")
             { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
             using (var p = Process.Start(psi))
@@ -460,49 +545,195 @@ namespace ChatGPTFixSetup
             }
         }
 
-        private static bool NeedsCopy(string src, string dst)
+        // True when the target baseline "app" directory looks incomplete.
+        // We check the KEY files that MUST exist for the app to run:
+        // ChatGPT.exe, app.asar and the resources dir. A stale/partial copy
+        // (e.g. only some top-level files, missing app.asar) therefore
+        // triggers a re-copy. robocopy is idempotent: re-running it over an
+        // existing target only copies what's missing. We deliberately do NOT
+        // compare file counts against the source tree here — enumerating
+        // C:\Program Files\WindowsApps\... with System.IO throws
+        // (FileIOPermission emulation).
+        private static bool NeedsCopy(string srcDir, string dstDir)
         {
-            if (!File.Exists(dst)) return true;
-            return new FileInfo(src).Length != new FileInfo(dst).Length;
+            if (!Directory.Exists(srcDir)) return true;
+            if (!Directory.Exists(dstDir)) return true;
+            // Key files that must all be present for a valid baseline.
+            string[] keyFiles = { "ChatGPT.exe", "resources", "app.asar" };
+            foreach (string key in keyFiles)
+            {
+                string p = Path.Combine(dstDir, key);
+                if (!File.Exists(p) && !Directory.Exists(p)) return true;
+            }
+            return false;
+        }
+
+        // Returns (fileCount, totalBytes) for a directory tree; (0,0) on error.
+        // Called only on the TARGET (user-owned) tree, which System.IO can
+        // enumerate fine.
+        private static Tuple<int, long> DirStats(string dir)
+        {
+            int count = 0;
+            long bytes = 0;
+            try
+            {
+                foreach (var f in Directory.GetFiles(LongPath(dir), "*", SearchOption.AllDirectories))
+                {
+                    count++;
+                    try { bytes += new FileInfo(LongPath(f)).Length; } catch { }
+                }
+            }
+            catch { }
+            return Tuple.Create(count, bytes);
         }
 
         private static long TotalBytes(string dir)
         {
             long sum = 0;
-            try { foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories)) sum += new FileInfo(f).Length; }
+            try { foreach (var f in Directory.GetFiles(LongPath(dir), "*", SearchOption.AllDirectories)) sum += new FileInfo(LongPath(f)).Length; }
             catch { }
             return sum;
         }
 
-        private void CopyTree(string src, string dst, long total)
+        // Prepends the Windows long-path prefix (\\?\) ONLY when the path is
+        // near MAX_PATH (260), so the native CopyFile can handle deeply
+        // nested directories (resources\cua_node\... in this package have
+        // paths > 260 chars). Short paths are left untouched.
+        private static string LongPath(string path)
         {
-            Directory.CreateDirectory(dst);
-            long done = 0;
-            CopyInner(src, dst, total, ref done);
+            if (path.Length < 250) return path;
+            if (path.StartsWith(@"\\?\")) return path;
+            if (path.Length >= 3 && path[1] == ':' && path[2] == '\\')
+                return @"\\?\" + path;
+            if (path.Length >= 2 && path.StartsWith(@"\\"))
+                return @"\\?\UNC\" + path.Substring(2);
+            return path;
         }
 
-        private void CopyInner(string src, string dst, long total, ref long done)
+        // Native CopyFileW via P/Invoke — used only for single files (e.g.
+        // bin\ deployment). Tree copies go through RobocopyTree (robocopy),
+        // which is native, handles long paths, and copied the full 5421-file
+        // package in 8 seconds with the current user's token.
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool CopyFileW(string lpExistingFileName, string lpNewFileName, bool bFailIfExists);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool CreateDirectoryW(string lpPathName, IntPtr lpSecurityAttributes);
+
+        private static void NativeCopy(string src, string dst)
         {
-            foreach (var file in Directory.GetFiles(src))
+            if (!CopyFileW(LongPath(src), LongPath(dst), false))
             {
-                string target = Path.Combine(dst, Path.GetFileName(file));
-                File.Copy(file, target, true);
-                done += new FileInfo(file).Length;
-                int pct = total > 0 ? (int)(done * 92 / total) : 0;
-                if (pct > _progress.Value) BeginInvoke((Action)(() => _progress.Value = pct));
+                int err = Marshal.GetLastWin32Error();
+                throw new IOException("CopyFileW 失败（错误 " + err + "）：" + src);
             }
-            foreach (var dir in Directory.GetDirectories(src))
+        }
+
+        // Tree copy via robocopy (Windows built-in). Rationale: robocopy is
+        // native, handles long paths (>260) and ACL-restricted sources
+        // (C:\Program Files\WindowsApps\) correctly, and copied this exact
+        // 5421-file / 1.76 GB package in ~8 seconds with the current user's
+        // token. Hand-rolled .NET recursion is either slow (per-file
+        // P/Invoke) or breaks (FileIOPermission emulation, MAX_PATH,
+        // stack overflow on deep node_modules trees). robocopy exit codes:
+        // 0-7 are success (1=files copied, 2=extra files, 4=mismatch);
+        // 8+ are failures. /R:0 /W:0 = no retries, /E = include subdirs,
+        // /NFL /NDL /NJH /NJS /NP = quiet output.
+        //
+        // IMPORTANT: arguments are passed WITHOUT surrounding quotes.
+        // WindowsApps paths and the install root never contain spaces here;
+        // quoting them via ProcessStartInfo.Arguments gets mangled (robocopy
+        // then sees the quote chars as part of the path — error 123).
+        private void CopyTree(string src, string dst, long total)
+        {
+            // Delegate to a .bat wrapper: writing the robocopy command line
+            // into a batch file and launching it via cmd.exe /c sidesteps ALL
+            // ProcessStartInfo.Arguments quoting/escaping quirks (paths under
+            // "C:\Program Files\..." contain a space; direct Arguments
+            // strings get mangled differently between .NET versions). The
+            // bat also lets us capture the exit code reliably.
+            string batPath = Path.Combine(Path.GetTempPath(),
+                "chatgpt-fix-robocopy-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".bat");
+            string logPath = Path.Combine(Path.GetTempPath(),
+                "chatgpt-fix-robocopy-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".log");
+            string batContent =
+                "@echo off\r\n" +
+                "echo CMDLINE: robocopy.exe \"" + src + "\" \"" + dst + "\" /E /R:0 /W:0 /NFL /NDL /NJH /NJS /NP > \"" + logPath + "\" 2>&1\r\n" +
+                "robocopy.exe \"" + src + "\" \"" + dst + "\" /E /R:0 /W:0 /NFL /NDL /NJH /NJS /NP >> \"" + logPath + "\" 2>&1\r\n" +
+                "echo ROBEXIT=%errorlevel% >> \"" + logPath + "\"\r\n" +
+                "exit /b %errorlevel%\r\n";
+            // Post-mortem: record exactly what we launched, into the SAME
+            // directory as the running Setup (works for both GUI and CLI).
+            string dbgPath = Path.Combine(
+                Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".",
+                "robocopy-debug.txt");
+            try
             {
-                string sub = Path.GetFileName(dir);
-                if (sub == "app.tmp") continue;
-                CopyInner(dir, Path.Combine(dst, sub), total, ref done);
+                File.AppendAllText(dbgPath,
+                    DateTime.Now.ToString("HH:mm:ss") + " src=" + src + "\r\n" +
+                    "  dst=" + dst + "\r\n  temp=" + Path.GetTempPath() + "\r\n" +
+                    "  bat=" + batPath + "\r\n  batContent:\r\n" + batContent + "\r\n" +
+                    "  log=" + logPath + "\r\n");
+            }
+            catch { }
+            File.WriteAllText(batPath, batContent, System.Text.Encoding.ASCII);
+            var psi = new ProcessStartInfo("cmd.exe", "/c \"" + batPath + "\"")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = false,
+                RedirectStandardError = false
+            };
+            try
+            {
+                using (var p = Process.Start(psi))
+                {
+                    if (p == null) throw new IOException("无法启动 robocopy 批处理。");
+                    if (!p.WaitForExit(600000)) { try { p.Kill(); } catch { } }
+                    int code = p.ExitCode;
+                    string logContent = "";
+                    try { if (File.Exists(logPath)) logContent = File.ReadAllText(logPath); } catch { }
+                    try
+                    {
+                        File.AppendAllText(dbgPath,
+                            "  batExit=" + code + "\r\n  log=" + logContent.Replace("\r\n", " | ") + "\r\n");
+                    }
+                    catch { }
+                    if (code >= 8)
+                    {
+                        throw new IOException("robocopy 复制官方包失败（退出码 " + code + "）。log: " + logContent);
+                    }
+                }
+                // Verify the copy actually happened: robocopy can "succeed"
+                // (exit < 8) while only copying a fraction of the tree.
+                if (File.Exists(logPath))
+                {
+                    string log = File.ReadAllText(logPath);
+                    if (log.IndexOf("0 files copied", StringComparison.OrdinalIgnoreCase) >= 0
+                        && Directory.Exists(dst))
+                    {
+                        string[] entries;
+                        try { entries = Directory.GetFileSystemEntries(dst); }
+                        catch { entries = new string[0]; }
+                        if (entries.Length == 0)
+                        {
+                            throw new IOException("robocopy 报告未复制任何文件。日志：" + log);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                try { File.Delete(batPath); } catch { }
+                // Keep logPath for post-mortem analysis (deleted by caller
+                // or next run; it lives in %TEMP%).
             }
         }
 
         private static string Sha256(string path)
         {
             using (var sha = SHA256.Create())
-            using (var fs = File.OpenRead(path))
+            using (var fs = File.OpenRead(LongPath(path)))
                 return BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
         }
 
@@ -525,6 +756,33 @@ namespace ChatGPTFixSetup
         [STAThread]
         public static void Main(string[] args)
         {
+            if (args != null && args.Length > 0 && string.Equals(args[0], "--test-install", StringComparison.OrdinalIgnoreCase))
+            {
+                // CLI self-test install (automation): runs the FULL DoInstall
+                // flow with no window. Use together with a sidecar
+                // test-config.json that redirects install_root/shell_root/
+                // uninstall_subkey to a throwaway directory, so the real
+                // installation is never touched. Exit code 0 = success.
+                SetupForm.SetCliMode(true);
+                var form = new SetupForm();
+                bool ok = false;
+                try { ok = form.DoInstall(); }
+                catch (Exception ex) { Console.WriteLine("TEST-INSTALL EXCEPTION: " + ex); }
+                try
+                {
+                    File.WriteAllText(Path.Combine(
+                        Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".",
+                        "test-install.log"),
+                        DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + (ok ? "OK" : "FAILED") + "\n" +
+                        (form.LastError ?? ""));
+                }
+                catch { }
+                Console.WriteLine(ok
+                    ? "TEST-INSTALL OK"
+                    : "TEST-INSTALL FAILED");
+                Environment.Exit(ok ? 0 : 1);
+                return;
+            }
             if (args != null && args.Length > 0 && string.Equals(args[0], "uninstall", StringComparison.OrdinalIgnoreCase))
             {
                 // CLI uninstall (invoked by the registry UninstallString).
