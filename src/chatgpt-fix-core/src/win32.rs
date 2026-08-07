@@ -32,6 +32,26 @@ unsafe extern "system" {
     fn IsWindowVisible(hWnd: Hwnd) -> Bool;
     fn SetForegroundWindow(hWnd: Hwnd) -> Bool;
     fn ShowWindow(hWnd: Hwnd, nCmdShow: c_int) -> Bool;
+    fn MessageBoxW(hWnd: Hwnd, lpText: *const u16, lpCaption: *const u16, uType: Dword) -> c_int;
+}
+
+/// Standard MessageBox flags (user32).
+pub const MB_OK: u32 = 0x0000;
+pub const MB_YESNO: u32 = 0x0004;
+pub const MB_ICONQUESTION: u32 = 0x0020;
+pub const MB_ICONWARNING: u32 = 0x0030;
+pub const MB_ICONINFORMATION: u32 = 0x0040;
+pub const IDYES: i32 = 6;
+
+/// Show a modal message box (used by Setup's GUI install flow). Returns the
+/// button id pressed (e.g. `IDYES`).
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub fn message_box(title: &str, text: &str, flags: u32) -> i32 {
+    unsafe {
+        let title_w: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
+        let text_w: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
+        MessageBoxW(ptr::null_mut(), text_w.as_ptr(), title_w.as_ptr(), flags)
+    }
 }
 
 unsafe extern "system" {
