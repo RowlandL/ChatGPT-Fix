@@ -43,11 +43,16 @@ namespace ChatGPTFixSetup
         //        { "install_root": "...", "shell_root": "...", "uninstall_subkey": "..." }
         //   2. Env vars CODEX_NTFS_FIX_SETUP_TESTING=1 + TEST_INSTALL_ROOT /
         //      TEST_SHELL_ROOT / TEST_UNINSTALL_SUBKEY (fallback).
+        //   Optional sidecar field "skip_launch": "1" makes --test-install
+        //   skip the final Launcher start, so an automated re-verification
+        //   can never hijack (or kill) a live ChatGPT instance. Production
+        //   has no test-config.json and always launches.
         private sealed class TestConfig
         {
             public string install_root;
             public string shell_root;
             public string uninstall_subkey;
+            public string skip_launch;
         }
 
         private static TestConfig _testConfig;
@@ -89,6 +94,7 @@ namespace ChatGPTFixSetup
             cfg.install_root = ExtractJsonString(json, "install_root");
             cfg.shell_root = ExtractJsonString(json, "shell_root");
             cfg.uninstall_subkey = ExtractJsonString(json, "uninstall_subkey");
+            cfg.skip_launch = ExtractJsonString(json, "skip_launch");
             return cfg;
         }
 
@@ -259,10 +265,6 @@ namespace ChatGPTFixSetup
                 // failure here must not fail the install.
                 try { RegisterUninstallEntry(installRoot); }
                 catch (Exception ex) { SetStatus("提示：注册卸载项失败（" + ex.Message + "）"); }
-                // 3.6. Ensure the token-cost overlay (idempotent). The
-                // Manager's ntc-ensure short-circuits when already injected.
-                try { EnsureNtc(installRoot, baseline); }
-                catch (Exception ex) { SetStatus("提示：Token 插件检查跳过（" + ex.Message + "）"); }
                 SetStep(2);
                 _progress.Value = 100;
 
@@ -293,9 +295,19 @@ namespace ChatGPTFixSetup
                     throw new IOException(missingBins + " 个程序文件（Launcher/Manager/Packer）未找到。" +
                         "请将 4 个 EXE（Setup + 3 个 Rust 程序）放在同一目录后重试。");
                 }
+                // 4.1. Ensure the token-cost overlay (idempotent) AFTER bin\
+                // is deployed: EnsureNtc short-circuits when the Manager is
+                // absent, so calling it before step 4 silently skipped the
+                // injection on a fresh install. The Manager's ntc-ensure
+                // short-circuits when already injected.
+                bool ntcOk = false;
+                try { ntcOk = EnsureNtc(installRoot, baseline); }
+                catch (Exception ex) { SetStatus("提示：Token 插件检查跳过（" + ex.Message + "）"); }
+                if (!ntcOk)
+                    SetStatus("提示：Token 插件注入未完成（缺少 @electron/asar 或注入失败），可稍后重新安装重试。");
                 SetStatus("正在启动 ChatGPT…");
                 string launcher = Path.Combine(binDir2, "ChatGPT-Fix-Launcher.exe");
-                if (File.Exists(launcher))
+                if (File.Exists(launcher) && !TestSkipLaunch())
                     Process.Start(launcher);
                 SetStep(3);
                 return true;
@@ -454,18 +466,22 @@ namespace ChatGPTFixSetup
             Registry.CurrentUser.DeleteSubKeyTree(GetUninstallSubkey(), false);
         }
 
-        private static void EnsureNtc(string installRoot, string baseline)
+        // Runs the Manager's ntc-ensure and returns whether the token-cost
+        // overlay is actually present afterwards. The Manager's asar
+        // injector requires the @electron/asar node module; without it the
+        // injection dies with MODULE_NOT_FOUND and the install would
+        // "succeed" WITHOUT the token-cost plugin, so the overlay check
+        // turns that silent no-op into a visible warning.
+        private static bool EnsureNtc(string installRoot, string baseline)
         {
             string manager = Path.Combine(installRoot, "bin", "ChatGPT-Fix-Manager.exe");
             string resources = Path.Combine(baseline, "app", "resources");
-            if (!File.Exists(manager) || !Directory.Exists(resources)) return;
+            string overlay = Path.Combine(resources, "ntc-overlay");
+            if (!File.Exists(manager) || !Directory.Exists(resources)) return false;
             var psi = new ProcessStartInfo(manager,
                 "ntc-ensure --fixture-root \"" + resources + "\"")
             { CreateNoWindow = true, UseShellExecute = false };
-            // The Manager's asar injector requires the @electron/asar node
-            // module, resolved via NODE_PATH. Without it the injection dies
-            // with MODULE_NOT_FOUND and the install "succeeds" WITHOUT the
-            // token-cost plugin. Forward the module location explicitly.
+            // Forward the module location explicitly (NODE_PATH).
             string nodePath = FindAsarNodePath();
             if (nodePath != null) psi.EnvironmentVariables["NODE_PATH"] = nodePath;
             using (var p = Process.Start(psi))
@@ -475,6 +491,18 @@ namespace ChatGPTFixSetup
                     if (!p.WaitForExit(60000)) { try { p.Kill(); } catch { } }
                 }
             }
+            return Directory.Exists(overlay);
+        }
+
+        // Test hook: when test-config.json sets "skip_launch": "1", the
+        // final Launcher start is skipped (see TestConfig). Production has
+        // no test-config.json, so this is always false there.
+        private static bool TestSkipLaunch()
+        {
+            var cfg = GetTestConfig();
+            if (cfg == null) return false;
+            return string.Equals(cfg.skip_launch, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(cfg.skip_launch, "true", StringComparison.OrdinalIgnoreCase);
         }
 
         // Locates a node_modules dir containing @electron\asar (needed by
@@ -812,6 +840,9 @@ namespace ChatGPTFixSetup
         private static void CreateShortcuts(string installRoot)
         {
             string lnkDir = GetShellProgramsDir();
+            // WScript.Shell fails when the target directory is missing
+            // (observed in the isolated fresh-env test), so create it first.
+            Directory.CreateDirectory(lnkDir);
             // COM WScript.Shell via dynamic binding (no Interop reference needed).
             Type wsType = Type.GetTypeFromProgID("WScript.Shell");
             dynamic ws = Activator.CreateInstance(wsType);

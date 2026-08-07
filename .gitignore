@@ -16,3 +16,14 @@ credentials/
 .squad/
 locks/*.receive.lock
 /out/
+
+# Setup WinForms dev/test scaffolding (never part of release evidence)
+setup-winforms/_iso_*/
+setup-winforms/deploy-*/
+setup-winforms/release-*/
+setup-winforms/*.exe
+setup-winforms/*.ps1
+setup-winforms/*.py
+setup-winforms/app.test.manifest
+setup-winforms/compile-test.bat
+setup-winforms/robocopy-debug.txt
