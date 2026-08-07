@@ -62,11 +62,13 @@ fn tracked_build_evidence_is_exact_and_self_consistent() {
         .iter()
         .map(|(name, _, sha256)| format!("{sha256}  out/0.4.0/win-x64/{name}\n"))
         .collect::<String>();
-    assert_eq!(
-        fs::read_to_string(root.join("checksums/0.4.0-win-x64.sha256"))
-            .expect("read release checksums"),
-        expected_checksums
-    );
+    // Normalise CRLF: older .sha256 files were committed before the
+    // .gitattributes eol=lf rule existed, so the working-tree copy may be
+    // CRLF. Compare content, not line-ending bytes.
+    let actual_checksums = fs::read_to_string(root.join("checksums/0.4.0-win-x64.sha256"))
+        .expect("read release checksums")
+        .replace("\r\n", "\n");
+    assert_eq!(actual_checksums, expected_checksums);
 
     for (name, _, artifact_sha256) in ARTIFACTS {
         let receipt = ReceiptV1 {
@@ -197,11 +199,10 @@ fn p3_tracked_build_evidence_is_exact_and_self_consistent() {
         .iter()
         .map(|(name, _, sha256)| format!("{sha256}  out/0.5.0/win-x64/{name}\n"))
         .collect::<String>();
-    assert_eq!(
-        fs::read_to_string(root.join("checksums/0.5.0-win-x64.sha256"))
-            .expect("read release checksums"),
-        expected_checksums
-    );
+    let actual_checksums = fs::read_to_string(root.join("checksums/0.5.0-win-x64.sha256"))
+        .expect("read release checksums")
+        .replace("\r\n", "\n");
+    assert_eq!(actual_checksums, expected_checksums);
 
     for (name, _, artifact_sha256) in P3_ARTIFACTS {
         let receipt = ReceiptV1 {
@@ -314,11 +315,10 @@ fn p4_tracked_build_evidence_is_exact_and_self_consistent() {
         .iter()
         .map(|(name, _, sha256)| format!("{sha256}  out/0.6.0/win-x64/{name}\n"))
         .collect::<String>();
-    assert_eq!(
-        fs::read_to_string(root.join("checksums/0.6.0-win-x64.sha256"))
-            .expect("read release checksums"),
-        expected_checksums
-    );
+    let actual_checksums = fs::read_to_string(root.join("checksums/0.6.0-win-x64.sha256"))
+        .expect("read release checksums")
+        .replace("\r\n", "\n");
+    assert_eq!(actual_checksums, expected_checksums);
 
     for (name, _, artifact_sha256) in P4_ARTIFACTS {
         let receipt = ReceiptV1 {
@@ -431,11 +431,10 @@ fn p5_tracked_build_evidence_is_exact_and_self_consistent() {
         .iter()
         .map(|(name, _, sha256)| format!("{sha256}  out/0.7.0/win-x64/{name}\n"))
         .collect::<String>();
-    assert_eq!(
-        fs::read_to_string(root.join("checksums/0.7.0-win-x64.sha256"))
-            .expect("read release checksums"),
-        expected_checksums
-    );
+    let actual_checksums = fs::read_to_string(root.join("checksums/0.7.0-win-x64.sha256"))
+        .expect("read release checksums")
+        .replace("\r\n", "\n");
+    assert_eq!(actual_checksums, expected_checksums);
 
     for (name, _, artifact_sha256) in P5_ARTIFACTS {
         let receipt = ReceiptV1 {
@@ -547,11 +546,10 @@ fn p6_tracked_build_evidence_is_exact_and_self_consistent() {
         .iter()
         .map(|(name, _, sha256)| format!("{sha256}  out/0.8.0/win-x64/{name}\n"))
         .collect::<String>();
-    assert_eq!(
-        fs::read_to_string(root.join("checksums/0.8.0-win-x64.sha256"))
-            .expect("read release checksums"),
-        expected_checksums
-    );
+    let actual_checksums = fs::read_to_string(root.join("checksums/0.8.0-win-x64.sha256"))
+        .expect("read release checksums")
+        .replace("\r\n", "\n");
+    assert_eq!(actual_checksums, expected_checksums);
 
     for (name, _, artifact_sha256) in P6_ARTIFACTS {
         let receipt = ReceiptV1 {
@@ -663,11 +661,10 @@ fn p7_tracked_build_evidence_is_exact_and_self_consistent() {
         .iter()
         .map(|(name, _, sha256)| format!("{sha256}  out/0.9.0/win-x64/{name}\n"))
         .collect::<String>();
-    assert_eq!(
-        fs::read_to_string(root.join("checksums/0.9.0-win-x64.sha256"))
-            .expect("read release checksums"),
-        expected_checksums
-    );
+    let actual_checksums = fs::read_to_string(root.join("checksums/0.9.0-win-x64.sha256"))
+        .expect("read release checksums")
+        .replace("\r\n", "\n");
+    assert_eq!(actual_checksums, expected_checksums);
 
     for (name, _, artifact_sha256) in P7_ARTIFACTS {
         let receipt = ReceiptV1 {
@@ -784,11 +781,10 @@ fn p8_tracked_build_evidence_is_exact_and_self_consistent() {
         .iter()
         .map(|(name, _, sha256)| format!("{sha256}  out/1.0.0/win-x64/{name}\n"))
         .collect::<String>();
-    assert_eq!(
-        fs::read_to_string(root.join("checksums/1.0.0-win-x64.sha256"))
-            .expect("read release checksums"),
-        expected_checksums
-    );
+    let actual_checksums = fs::read_to_string(root.join("checksums/1.0.0-win-x64.sha256"))
+        .expect("read release checksums")
+        .replace("\r\n", "\n");
+    assert_eq!(actual_checksums, expected_checksums);
 
     for (name, _, artifact_sha256) in P8_ARTIFACTS {
         let receipt = ReceiptV1 {
