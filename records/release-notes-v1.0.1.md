@@ -28,9 +28,9 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 
 | 文件 | SHA-256 |
 |---|---|
-| ChatGPT-Fix-Launcher.exe | `98054a54d6acbf825c1ce14d5ebb6c62f564b9f59e72b80ea3f1ee2024bba4ce` |
-| ChatGPT-Fix-Manager.exe | `438fc637bfbd9cbfc983426e486016432cf1a9b2e31d7da3e5dda86fac48618e` |
-| ChatGPT-Fix-Packer.exe | `1d44d7edad9e430887c13bd6eced3e329303c2e4bf6deb406065acc6e8a56fce` |
+| ChatGPT-Fix-Launcher.exe | `775e94c936f2addc1c2aeb7bbae8c5cdbb94f11ea0030282d6f8b175d5c5e178` |
+| ChatGPT-Fix-Manager.exe | `1c9ef8726fbfa7a16548d8109aea5d19dacd511391e70af9f71b68c32a82a480` |
+| ChatGPT-Fix-Packer.exe | `967304e73ba5e81ce37e9b92758015340afa767aa5351cdc62783d22c60ac8ba` |
 | ChatGPT-Fix-Setup.exe | `de14cac62309c9db15d1b8325cb3f59a9701e65ca7e84cbd000f44e762356c3d`（.NET WinForms 版） |
 
 ## 安装使用
