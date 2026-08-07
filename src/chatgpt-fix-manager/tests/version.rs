@@ -53,6 +53,7 @@ fn assert_usage_error(command: &mut Command) {
             "       ChatGPT-Fix-Manager maintenance-plan --fixture-root <path>\n",
             "       ChatGPT-Fix-Manager ntc-health\n",
             "       ChatGPT-Fix-Manager ntc-reapply --fixture-root <path>\n",
+            "       ChatGPT-Fix-Manager ntc-ensure --fixture-root <path>\n",
             "       ChatGPT-Fix-Manager doctor\n",
         )
         .as_bytes(),
