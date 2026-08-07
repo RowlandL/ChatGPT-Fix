@@ -21,6 +21,7 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 - **PowerShell 自动检测**：优先使用 `pwsh.exe`（PowerShell 7），找不到时回退到 `powershell.exe`，兼容 Windows 25H2 及后续版本
 - **UAC 取消处理**：用户取消 UAC 提升提示后不再静默退出，继续显示 GUI 窗口
 - **Manager 修复**：`ntc-ensure` 和 `userscript` 下载同样使用 PowerShell 自动检测
+- **Setup 全新安装注入修复**：EnsureNtc（Token 插件注入）移到 bin 部署之后（原顺序在全新安装时 Manager 尚不存在、注入被静默跳过）；注入后校验 ntc-overlay 产物、缺失时明确提示；快捷方式目录防御性创建；--test-install 新增 skip_launch 测试钩子（生产行为不变）
 - **Setup 换用 .NET WinForms**：替代 Rust 原生 GUI（源码 `setup-winforms/SetupForm.cs`，csc .NET Framework 4.0.30319 x64 编译），同步修复：NODE_PATH 转发（FindAsarNodePath 候选链）、NeedsCopy 修正（`resources\app.asar`）、robocopy 工作目录硬化（规避 TMP 8.3 短名分号陷阱）+ ROBEXIT 日志校验
 - 全量 131 项测试通过，clippy 零警告
 
@@ -31,7 +32,7 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 | ChatGPT-Fix-Launcher.exe | `775e94c936f2addc1c2aeb7bbae8c5cdbb94f11ea0030282d6f8b175d5c5e178` |
 | ChatGPT-Fix-Manager.exe | `1c9ef8726fbfa7a16548d8109aea5d19dacd511391e70af9f71b68c32a82a480` |
 | ChatGPT-Fix-Packer.exe | `967304e73ba5e81ce37e9b92758015340afa767aa5351cdc62783d22c60ac8ba` |
-| ChatGPT-Fix-Setup.exe | `de14cac62309c9db15d1b8325cb3f59a9701e65ca7e84cbd000f44e762356c3d`（.NET WinForms 版） |
+| ChatGPT-Fix-Setup.exe | `5f104ff6e98f33e365d9f2960d377a675c30bbf48a4933a78084f53ce9d52ecb`（.NET WinForms 版） |
 
 ## 安装使用
 
