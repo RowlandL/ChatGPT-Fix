@@ -462,6 +462,12 @@ namespace ChatGPTFixSetup
             var psi = new ProcessStartInfo(manager,
                 "ntc-ensure --fixture-root \"" + resources + "\"")
             { CreateNoWindow = true, UseShellExecute = false };
+            // The Manager's asar injector requires the @electron/asar node
+            // module, resolved via NODE_PATH. Without it the injection dies
+            // with MODULE_NOT_FOUND and the install "succeeds" WITHOUT the
+            // token-cost plugin. Forward the module location explicitly.
+            string nodePath = FindAsarNodePath();
+            if (nodePath != null) psi.EnvironmentVariables["NODE_PATH"] = nodePath;
             using (var p = Process.Start(psi))
             {
                 if (p != null)
@@ -469,6 +475,46 @@ namespace ChatGPTFixSetup
                     if (!p.WaitForExit(60000)) { try { p.Kill(); } catch { } }
                 }
             }
+        }
+
+        // Locates a node_modules dir containing @electron\asar (needed by
+        // the token-cost injector). Candidates, in order: an inherited
+        // NODE_PATH, the Setup's own ntc\node_modules (shipped next to the
+        // exe), the per-user npx cache, the per-user global npm root.
+        // Returns null when not found — injection then degrades to a
+        // no-op and the plugin is simply not installed (never a crash).
+        private static string FindAsarNodePath()
+        {
+            string existing = Environment.GetEnvironmentVariable("NODE_PATH");
+            if (!string.IsNullOrEmpty(existing)
+                && Directory.Exists(Path.Combine(existing, "@electron", "asar")))
+                return existing;
+            string exeDir = Path.GetDirectoryName(
+                System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".";
+            string local = Path.Combine(exeDir, "ntc", "node_modules");
+            if (Directory.Exists(Path.Combine(local, "@electron", "asar"))) return local;
+            string localApp = Environment.GetEnvironmentVariable("LOCALAPPDATA");
+            if (localApp != null)
+            {
+                string npxRoot = Path.Combine(localApp, "npm-cache", "_npx");
+                if (Directory.Exists(npxRoot))
+                {
+                    try
+                    {
+                        foreach (string dir in Directory.GetDirectories(npxRoot))
+                        {
+                            string cand = Path.Combine(dir, "node_modules");
+                            if (Directory.Exists(Path.Combine(cand, "@electron", "asar")))
+                                return cand;
+                        }
+                    }
+                    catch { }
+                }
+                string npmGlobal = Path.Combine(localApp, "npm", "node_modules");
+                if (Directory.Exists(Path.Combine(npmGlobal, "@electron", "asar")))
+                    return npmGlobal;
+            }
+            return null;
         }
 
         private void OnFinished(bool ok)
@@ -559,7 +605,10 @@ namespace ChatGPTFixSetup
             if (!Directory.Exists(srcDir)) return true;
             if (!Directory.Exists(dstDir)) return true;
             // Key files that must all be present for a valid baseline.
-            string[] keyFiles = { "ChatGPT.exe", "resources", "app.asar" };
+            // NOTE: app.asar lives under resources\ (Electron layout), NOT
+            // in the app root — checking the wrong path would make
+            // NeedsCopy always true and re-copy the 1.7GB tree every run.
+            string[] keyFiles = { "ChatGPT.exe", "resources", @"resources\app.asar" };
             foreach (string key in keyFiles)
             {
                 string p = Path.Combine(dstDir, key);
@@ -652,9 +701,20 @@ namespace ChatGPTFixSetup
             // "C:\Program Files\..." contain a space; direct Arguments
             // strings get mangled differently between .NET versions). The
             // bat also lets us capture the exit code reliably.
-            string batPath = Path.Combine(Path.GetTempPath(),
+            // The bat lives NEXT TO the running Setup, NOT in
+            // Path.GetTempPath(): on this machine %TMP% resolves (via its
+            // 8.3 short name) to a legacy directory "H:\Temp;" whose NAME
+            // contains a semicolon. cmd.exe /c splits the command at ';'
+            // ("'H:\Temp' is not recognized..."), so the bat never runs and
+            // cmd exits with code 1 — the SAME code robocopy uses for
+            // "files copied". That made every install silently skip the
+            // copy. The Setup directory is always writable (robocopy-debug
+            // is written there too) and contains no semicolons.
+            string workDir = Path.GetDirectoryName(
+                System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".";
+            string batPath = Path.Combine(workDir,
                 "chatgpt-fix-robocopy-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".bat");
-            string logPath = Path.Combine(Path.GetTempPath(),
+            string logPath = Path.Combine(workDir,
                 "chatgpt-fix-robocopy-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".log");
             string batContent =
                 "@echo off\r\n" +
@@ -671,7 +731,7 @@ namespace ChatGPTFixSetup
             {
                 File.AppendAllText(dbgPath,
                     DateTime.Now.ToString("HH:mm:ss") + " src=" + src + "\r\n" +
-                    "  dst=" + dst + "\r\n  temp=" + Path.GetTempPath() + "\r\n" +
+                    "  dst=" + dst + "\r\n  workDir=" + workDir + "\r\n" +
                     "  bat=" + batPath + "\r\n  batContent:\r\n" + batContent + "\r\n" +
                     "  log=" + logPath + "\r\n");
             }
@@ -703,6 +763,18 @@ namespace ChatGPTFixSetup
                     {
                         throw new IOException("robocopy 复制官方包失败（退出码 " + code + "）。log: " + logContent);
                     }
+                    // The bat MUST have actually run. cmd.exe /c exits with
+                    // code 1 BOTH when robocopy copied files AND when it
+                    // failed to start the bat at all (e.g. a ';' in the bat
+                    // path). A real robocopy run always appends a
+                    // "ROBEXIT=<code>" line to the log, so its absence means
+                    // the copy never happened — fail loudly instead of
+                    // silently writing a fake "verified" baseline.
+                    if (!File.Exists(logPath)
+                        || File.ReadAllText(logPath).IndexOf("ROBEXIT=", StringComparison.Ordinal) < 0)
+                    {
+                        throw new IOException("robocopy 批处理未执行（cmd 启动失败？）。bat=" + batPath);
+                    }
                 }
                 // Verify the copy actually happened: robocopy can "succeed"
                 // (exit < 8) while only copying a fraction of the tree.
@@ -726,7 +798,7 @@ namespace ChatGPTFixSetup
             {
                 try { File.Delete(batPath); } catch { }
                 // Keep logPath for post-mortem analysis (deleted by caller
-                // or next run; it lives in %TEMP%).
+                // or next run; it lives next to the Setup exe).
             }
         }
 
