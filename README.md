@@ -1,53 +1,51 @@
 # ChatGPT-Fix
 
-Local evidence and handoff repository for the Codex Desktop / ChatGPT Desktop mitigation review.
+Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，修复 NTFS 内核非分页池泄漏，集成本地 Token 用量统计。
 
-This repository captures the July 2026 local audit of three related failure surfaces:
+> ⚠️ **非 OpenAI 官方产品**。本项目与 OpenAI 无关，未获得 OpenAI 任何授权或认可。使用本项目即表示您同意自行承担相关风险，并遵守 [OpenAI 使用条款](https://openai.com/policies/terms-of-use/)。
 
-- Codex Desktop / ChatGPT Desktop child processes, especially MCP/`uv`/Node/Python process stacks, remaining after task activity.
-- Codex session and log growth caused by repeated history compaction and inline image/base64 payloads.
-- A wrapper-based mitigation strategy that preserves the official OpenAI package while keeping a local patch effective after official updates.
+## 功能
 
-## Repository Map
-
-| Path | Purpose |
+| 能力 | 说明 |
 |---|---|
-| `docs/审查文档.md` | Main review document with findings, evidence, and recommended architecture. |
-| `docs/HANDOFF.md` | Current handoff: where the work stopped and what the next session should do. |
-| `docs/修复升级执行方向报告.md` | Execution-direction report for upgrading the current ChatGPT-NTFS-Fix-style mitigation. |
-| `records/conversation-visible.md` | Redacted visible user/assistant conversation export from the local Codex session. |
-| `records/local-audit-snapshot.md` | Local host/process/version/storage snapshot gathered during review. |
-| `records/external-references.md` | Public issue and official documentation reference snapshot. |
-| `records/external-reference-snapshot.json` | Machine-readable GitHub issue metadata snapshot. |
-| `scripts/chatgpt-fix-doctor.ps1` | Read-only dry-run doctor for refreshing local package, launcher, process, and `.codex` risk evidence. |
-| `materials/reports/` | Previous bilingual NTFS/nonpaged-pool reports and PDFs. |
-| `materials/screenshots/` | Screenshot supplied by the user for the image/base64 storage issue. |
-| `materials/installers/` | Local mitigation installer artifact, stored for traceability only. |
-| `checksums/SHA256SUMS.txt` | SHA-256 hashes for committed materials. |
+| **NTFS 泄漏修复** | 将官方包完整复制到用户目录 baseline 运行，规避 WindowsApps 沙箱环境触发的内核非分页池泄漏（实测：修复前 +440MB/min，修复后长时间运行稳定） |
+| **一键安装** | `ChatGPT-Fix-Setup.exe install --source <dir>`：复制 baseline（全量文件哈希 manifest）、写入指针、创建快捷方式、记录安装日志 |
+| **隔离启动** | Launcher 校验 verified baseline 后从用户目录启动；独立 profile（语言/登录/设置数据保留）；Job Object 归属 + 驻留生命周期 |
+| **Token 用量统计** | 输入框上方实时 HUD：本轮/会话 Token、缓存命中、费用、今日累计；本地统计 + 可选 CC Switch 同步 |
+| **单实例 + 窗口激活** | 重复双击复用实例并激活窗口 |
+| **安全设计** | 不修改 `WindowsApps`、不随发布分发官方包内容、全部可回滚（注入前自动备份） |
 
-## Current Status
+## 安装使用
 
-The review phase is complete, and the first no-side-effect doctor prototype is available. No installer is executed, no active process is terminated, no logs are cleaned, and no official package files are modified by the doctor.
+1. 从 [Releases](https://github.com/RowlandL/ChatGPT-Fix/releases) 下载 4 个 EXE 到同一目录
+2. 需先安装官方 OpenAI.Codex（ChatGPT 桌面版）
+3. 运行 `ChatGPT-Fix-Setup.exe install --source <EXE目录>`
+4. 双击开始菜单的 **ChatGPT-Fix-Launcher** 或 **ChatGPT** 启动
 
-Run the doctor from this repository with:
+## 第三方组件归属与声明
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\chatgpt-fix-doctor.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\chatgpt-fix-doctor.ps1 -Json
-```
+本项目**不宣称**对以下第三方内容的任何所有权，并在分发中**不包含**以下第三方代码（安装/运行时从各自来源获取）：
 
-The doctor reports:
+| 组件 | 来源 | 许可证 | 获取方式 |
+|---|---|---|---|
+| **Token 用量插件**（userscript） | [Tianzora/codex-token-cost](https://github.com/Tianzora/codex-token-cost)（v0.7.9） | 上游仓库未提供显式 LICENSE（默认版权保留） | `ntc-reapply` 自动获取：优先本机已有副本，否则从上游 GitHub tag 下载；**不随本发布分发** |
+| **注入机制思路参考** | [BigPizzaV3/CodexPlusPlus](https://github.com/BigPizzaV3/CodexPlusPlus) | AGPL-3.0 | 仅参考其 userscript 注入思路；本项目 loader 为**独立自研实现**，不包含其代码 |
+| **官方 ChatGPT** | OpenAI | 受 [OpenAI 使用条款](https://openai.com/policies/terms-of-use/) 约束 | 用户从官方渠道安装；本项目仅在本机复制运行，不包含/分发官方包内容 |
 
-- latest registered official `OpenAI.Codex` package path, version, and `ChatGPT.exe` SHA-256;
-- current ChatGPT shortcut target and local mitigation state;
-- version drift between the official package and local isolated baseline;
-- candidate MCP/`uv`/Node/Python/PowerShell descendants that the local lifecycle model must account for;
-- `.codex` session and `logs_2.sqlite` size risk.
+**免责声明**：
+- 本项目与 OpenAI 无任何关联，非官方发布
+- 复制并在本地修改运行官方应用可能违反 OpenAI 使用条款（如 "modify/copy" 条款），请自行评估风险；本项目使用者自行承担相应后果
+- Token 用量插件来自第三方开源社区，其行为与许可以其上游项目为准；本项目不对其负责
+- 本项目仅用于个人本地使用与研究目的
 
-The next useful step is a reviewed `ChatGPT-NTFS-Fix`-style launcher/baseline implementation that:
+## 构建
 
-- discovers the latest registered official `OpenAI.Codex` package on each launch;
-- prepares an isolated side-by-side runtime copy when the official version changes;
-- applies local mitigations only to the isolated runtime or launcher environment;
-- accounts for MCP/`uv`/Node/Python/PowerShell lifecycle from the launcher-owned isolated runtime rather than relying on a separate watchdog as the primary mechanism;
-- caps or externalizes image-heavy history/log payloads without corrupting active sessions.
+- Rust `x86_64-pc-windows-msvc`，纯标准库（最小 Win32 FFI），无外部 crate 依赖
+- 225 项测试通过，clippy 零警告
+- 构建产物哈希见各 Release 的 `SHA256SUMS.txt`
+
+## 许可证
+
+本项目自研代码（Rust 二进制、安装/注入脚本、文档）以 **MIT License** 发布，见 [LICENSE](LICENSE)。
+
+第三方组件（如 Token 用量插件 userscript）**不适用本许可证**，其权利归各自上游作者所有。
