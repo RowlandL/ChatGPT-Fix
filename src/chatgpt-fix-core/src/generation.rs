@@ -564,16 +564,24 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<(LaunchV1, Option<u32>
     // Dropping the Child handle detaches it — the process keeps running
     // independently (on Windows, dropping without wait leaves the child
     // alive; never call kill() here).
-    let child = Command::new(&executable)
+    //
+    // Use a dedicated user-data dir under the baseline (profile/user-data,
+    // the original Codex-NTFS-Fix design). Without it the app loads the
+    // default profile (%APPDATA%\Codex\web\Codex, several hundred MB) on
+    // every start, which is measurably slower than a clean profile.
+    let profile_dir = baseline.join("profile").join("user-data");
+    let _ = fs::create_dir_all(&profile_dir);
+    let mut command = Command::new(&executable);
+    command
         .current_dir(baseline)
-        .spawn()
-        .map_err(|error| {
-            contract_error(
-                "launch_spawn_failed",
-                "ChatGPT.exe",
-                format!("cannot launch ChatGPT.exe: {error}"),
-            )
-        })?;
+        .arg(format!("--user-data-dir={}", profile_dir.to_string_lossy()));
+    let child = command.spawn().map_err(|error| {
+        contract_error(
+            "launch_spawn_failed",
+            "ChatGPT.exe",
+            format!("cannot launch ChatGPT.exe: {error}"),
+        )
+    })?;
     let spawned_pid = child.id();
     // Job ownership (plan P4/P5): assign the root child into a Job so the
     // launcher owns the app tree for its lifetime. The Job handle is parked
