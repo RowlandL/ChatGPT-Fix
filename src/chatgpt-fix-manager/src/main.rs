@@ -67,6 +67,11 @@ fn main() -> ExitCode {
         {
             run_ntc_reapply(Path::new(root))
         }
+        [command, option, root]
+            if command == OsStr::new("ntc-ensure") && option == OsStr::new("--fixture-root") =>
+        {
+            run_ntc_ensure(Path::new(root))
+        }
         [command] if command == OsStr::new("doctor") => {
             eprintln!("doctor v2 requires P6 authorization");
             ExitCode::from(2)
@@ -421,6 +426,7 @@ fn print_usage() {
     eprintln!("       {PRODUCT_NAME} maintenance-plan --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} ntc-health");
     eprintln!("       {PRODUCT_NAME} ntc-reapply --fixture-root <path>");
+    eprintln!("       {PRODUCT_NAME} ntc-ensure --fixture-root <path>");
     eprintln!("       {PRODUCT_NAME} doctor");
 }
 
@@ -446,6 +452,40 @@ fn run_ntc_health() -> ExitCode {
             ExitCode::from(3)
         }
     }
+}
+
+/// `ChatGPT-Fix-Manager ntc-ensure --fixture-root <path>`.
+///
+/// Idempotent token-overlay assurance: if the app.asar COPY already carries
+/// the token-cost overlay (a `app.asar.pre-ntc` backup exists and
+/// `resources/native-token-cost/` is inside the archive), do nothing and
+/// report `already_injected`. Otherwise run the same injection as
+/// `ntc-reapply`. This is the hook a post-install / pre-launch step calls so
+/// the overlay survives a fresh install without touching the installer
+/// binary itself.
+fn run_ntc_ensure(root: &Path) -> ExitCode {
+    let in_asar = root.join("app.asar");
+    if !in_asar.is_file() {
+        eprintln!(
+            "ntc_ensure_failed: app.asar not found in {}",
+            root.display()
+        );
+        return ExitCode::from(3);
+    }
+    // Already injected? A committed injection leaves app.asar.pre-ntc and a
+    // modified asar. Use the pre-ntc backup as the marker (reapply only
+    // writes it once; a re-run without the backup would re-inject over an
+    // already injected copy, which we must avoid).
+    if root.join("app.asar.pre-ntc").is_file() {
+        println!(
+            "{{\"schema\":\"chatgpt_fix.ntc_ensure.v1\",\"action\":\"already_injected\",\"baseline\":\"{}\"}}",
+            root.display().to_string().replace('\\', "/")
+        );
+        return ExitCode::SUCCESS;
+    }
+    // Not injected: run the reapply path (which handles userscript fetch,
+    // node invocation, backup and atomic swap).
+    run_ntc_reapply(root)
 }
 
 /// `ChatGPT-Fix-Manager ntc-reapply --fixture-root <path>`.

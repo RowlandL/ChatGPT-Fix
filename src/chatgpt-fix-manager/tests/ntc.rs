@@ -67,6 +67,58 @@ fn ntc_reapply_fails_closed_when_userscript_missing() {
 }
 
 #[test]
+fn ntc_ensure_fails_closed_when_asar_missing() {
+    // ntc-ensure must fail closed (exit 3) when app.asar is absent, the
+    // same as ntc-reapply — never fabricate a manifest.
+    let root =
+        std::env::temp_dir().join(format!("chatgpt-fix-ntc-ensure-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create root");
+
+    let output = Command::new(BINARY)
+        .args(["ntc-ensure", "--fixture-root"])
+        .arg(&root)
+        .output()
+        .expect("run manager ntc-ensure");
+    assert_eq!(output.status.code(), Some(3), "stderr: {:?}", output.stderr);
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("app.asar not found"),
+        "stderr: {:?}",
+        output.stderr
+    );
+}
+
+#[test]
+fn ntc_ensure_skips_when_already_injected() {
+    // An existing app.asar.pre-ntc backup is the idempotence marker: the
+    // command must short-circuit with already_injected and exit 0 without
+    // touching node or the asar contents.
+    let root =
+        std::env::temp_dir().join(format!("chatgpt-fix-ntc-ensure2-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create root");
+    fs::write(root.join("app.asar"), b"injected-asar").expect("write asar");
+    fs::write(root.join("app.asar.pre-ntc"), b"original-asar").expect("write pre-ntc marker");
+
+    let output = Command::new(BINARY)
+        .args(["ntc-ensure", "--fixture-root"])
+        .arg(&root)
+        .output()
+        .expect("run manager ntc-ensure");
+    assert_eq!(output.status.code(), Some(0), "stderr: {:?}", output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("chatgpt_fix.ntc_ensure.v1") && stdout.contains("already_injected"),
+        "stdout: {stdout}"
+    );
+    // The asar must be untouched.
+    assert_eq!(
+        fs::read(root.join("app.asar")).expect("asar still present"),
+        b"injected-asar"
+    );
+}
+
+#[test]
 fn ntc_reapply_real_injection_roundtrip() {
     // End-to-end: build a tiny fake app.asar fixture (a directory repacked by
     // @electron/asar is not available in tests), so instead we exercise the
