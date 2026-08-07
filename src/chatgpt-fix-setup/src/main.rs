@@ -1,3 +1,11 @@
+// The Setup binary is a Windows GUI-subsystem program: double-clicking it
+// must NOT flash a console window. With no arguments it shows a guided
+// install dialog (parity with the initial Codex-NTFS-Fix GUI installer);
+// `install --source <dir>`, `uninstall` and `--version` remain available for
+// scripting (their console output is not visible in GUI mode; results are
+// recorded in logs/setup.jsonl).
+#![windows_subsystem = "windows"]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -96,7 +104,18 @@ fn copy_atomic(src: &Path, dst: &Path) -> Result<(), String> {
 ///
 /// Backs up any pre-existing destination files under `backups/<timestamp>/bin/`
 /// BEFORE overwriting (the Setup backup function), then installs atomically.
+mod gui;
+
 fn run_install(source_dir: &Path) -> ExitCode {
+    run_install_with_progress(source_dir, &|_, _| {})
+}
+
+/// Install pipeline with a progress callback `(done_bytes, total_bytes)`.
+/// The GUI wizard drives this on a worker thread; the console/CLI path uses
+/// the no-op closure above. All existing features are preserved (baseline
+/// staging with full hash manifest, setup.jsonl logging, shortcuts, icons,
+/// self-healing state.json).
+fn run_install_with_progress(source_dir: &Path, progress: &dyn Fn(u64, u64)) -> ExitCode {
     // Verify every source artifact exists first (fail closed).
     let mut missing = Vec::new();
     for name in ARTIFACTS {
@@ -165,7 +184,7 @@ fn run_install(source_dir: &Path) -> ExitCode {
     // shortcuts. Failures here are reported but do NOT roll back the installed
     // binaries — the install itself succeeded.
     let launcher = bin_dir.join("ChatGPT-Fix-Launcher.exe");
-    let config_ok = complete_one_click_config(&root, &launcher);
+    let config_ok = complete_one_click_config(&root, &launcher, progress);
     if config_ok {
         append_setup_log(
             &root,
@@ -207,6 +226,7 @@ fn stage_baseline(
     baseline_root: &Path,
     baseline_app: &Path,
     src_exe: &Path,
+    progress: &dyn Fn(u64, u64),
 ) -> bool {
     let existing_exe = baseline_app.join("ChatGPT.exe");
     let size_matches = std::fs::metadata(&existing_exe).ok().map(|m| m.len())
@@ -244,7 +264,9 @@ fn stage_baseline(
         eprintln!("setup_warn: cannot clear stale baseline tmp");
         return false;
     }
-    let manifest = match copy_dir_manifest(&pkg_root.join("app"), &tmp) {
+    // Pre-scan total bytes so the copy can report meaningful progress.
+    let total_bytes: u64 = dir_total_bytes(&pkg_root.join("app"));
+    let manifest = match copy_dir_manifest(&pkg_root.join("app"), &tmp, total_bytes, progress) {
         Some(m) => m,
         None => {
             eprintln!("setup_warn: cannot copy official app to baseline");
@@ -300,18 +322,58 @@ struct ManifestEntry {
     sha: String,
 }
 
+/// Total bytes under `root` (quick pre-scan for progress reporting).
+fn dir_total_bytes(root: &Path) -> u64 {
+    fn walk(dir: &Path, acc: &mut u64) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if let Ok(md) = fs::symlink_metadata(&p) {
+                    if md.is_dir() {
+                        walk(&p, acc);
+                    } else {
+                        *acc += md.len();
+                    }
+                }
+            }
+        }
+    }
+    let mut total = 0u64;
+    walk(root, &mut total);
+    total
+}
+
 /// Recursively copy `src` -> `dst`, hashing every file while copying.
-/// Returns the full manifest (relative path / bytes / SHA-256).
-fn copy_dir_manifest(src: &Path, dst: &Path) -> Option<Vec<ManifestEntry>> {
+/// Returns the full manifest (relative path / bytes / SHA-256). The progress
+/// callback `(done_bytes, total_bytes)` fires after every file.
+fn copy_dir_manifest(
+    src: &Path,
+    dst: &Path,
+    total_bytes: u64,
+    progress: &dyn Fn(u64, u64),
+) -> Option<Vec<ManifestEntry>> {
     fs::create_dir_all(dst).ok()?;
     let mut out = Vec::new();
+    let mut done_bytes = 0u64;
+    copy_dir_manifest_inner(src, dst, &mut done_bytes, total_bytes, progress, &mut out)?;
+    Some(out)
+}
+
+fn copy_dir_manifest_inner(
+    src: &Path,
+    dst: &Path,
+    done_bytes: &mut u64,
+    total_bytes: u64,
+    progress: &dyn Fn(u64, u64),
+    out: &mut Vec<ManifestEntry>,
+) -> Option<()> {
     let entries = fs::read_dir(src).ok()?;
     for entry in entries.flatten() {
         let from = entry.path();
         let to = dst.join(entry.file_name());
         let md = fs::symlink_metadata(&from).ok()?;
         if md.is_dir() {
-            out.extend(copy_dir_manifest(&from, &to)?);
+            copy_dir_manifest_inner(&from, &to, done_bytes, total_bytes, progress, out)?;
         } else {
             let bytes = fs::copy(&from, &to).ok()?;
             let data = fs::read(&from).ok()?;
@@ -322,16 +384,18 @@ fn copy_dir_manifest(src: &Path, dst: &Path) -> Option<Vec<ManifestEntry>> {
                 .to_string_lossy()
                 .replace('\\', "/");
             out.push(ManifestEntry { rel, bytes, sha });
+            *done_bytes += bytes;
+            progress(*done_bytes, total_bytes);
         }
     }
-    Some(out)
+    Some(())
 }
 
 /// One-click configuration: locate the official OpenAI.Codex package, stage a
 /// user-owned baseline copy, write `<root>/current.json` pointing at it, and
 /// create/repair the `ChatGPT.lnk` and `ChatGPT-Fix-Launcher.lnk` shortcuts so
 /// the user is done after a single double-click install.
-fn complete_one_click_config(root: &Path, launcher: &Path) -> bool {
+fn complete_one_click_config(root: &Path, launcher: &Path, progress: &dyn Fn(u64, u64)) -> bool {
     let mut ok = true;
 
     // 1. Detect the official package install location via Get-AppxPackage.
@@ -367,7 +431,13 @@ fn complete_one_click_config(root: &Path, launcher: &Path) -> bool {
                 .unwrap_or_else(|| "package".to_owned());
             let baseline_root = root.join("baselines").join(&pkg_dir);
             let baseline_app = baseline_root.join("app");
-            if stage_baseline(Path::new(pkg_root), &baseline_root, &baseline_app, &exe) {
+            if stage_baseline(
+                Path::new(pkg_root),
+                &baseline_root,
+                &baseline_app,
+                &exe,
+                progress,
+            ) {
                 // Pointer must reference the baseline ROOT (the directory that
                 // holds state.json) so the launcher's verified-baseline check
                 // passes; the executable lives at <root>/app/ChatGPT.exe.
@@ -548,6 +618,7 @@ fn run_uninstall() -> ExitCode {
 fn main() -> ExitCode {
     let mut arguments = std::env::args_os().skip(1);
     match arguments.next() {
+        None => gui::run_gui_install(),
         Some(argument) if argument == std::ffi::OsStr::new("--version") => match arguments.next() {
             None => {
                 println!("{PRODUCT_NAME} {}", env!("CARGO_PKG_VERSION"));
@@ -583,7 +654,7 @@ fn main() -> ExitCode {
                 run_uninstall()
             }
         }
-        _ => {
+        Some(_) => {
             eprintln!(
                 "install_forbidden: unsupported invocation; use 'install --source <dir>', 'uninstall', or '--version'"
             );
