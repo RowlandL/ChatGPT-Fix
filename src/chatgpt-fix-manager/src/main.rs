@@ -1,4 +1,5 @@
 use std::ffi::OsStr;
+use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -449,6 +450,71 @@ fn run_ntc_health() -> ExitCode {
 
 /// `ChatGPT-Fix-Manager ntc-reapply --fixture-root <path>`.
 ///
+/// Upstream of the token-cost userscript (the version we verified against).
+/// Download is best-effort at runtime; the plugin is optional and we never
+/// redistribute the script inside the release — this is a local fetch.
+const NTC_USERSCRIPT_URL: &str = "https://raw.githubusercontent.com/Tianzora/codex-token-cost/v0.7.9/scripts/codex-live-token-cost.js";
+
+/// Ensure the token-cost userscript exists at `dst`:
+///
+/// 1) already present;
+/// 2) a known local copy (user deployment / our cache);
+/// 3) downloaded from the upstream GitHub tag.
+///
+/// Returns true when the file is available afterwards. Uses PowerShell for
+/// the fetch so the Rust code stays dependency-free; failure is not fatal
+/// here (caller fail-closes).
+fn ensure_userscript(dst: &Path) -> bool {
+    if dst.is_file() {
+        return true;
+    }
+    let local_candidates = [
+        std::env::var("USERPROFILE")
+            .map(|u| {
+                PathBuf::from(u)
+                    .join(".codex/tools/codex-token-cost/scripts/codex-live-token-cost.js")
+            })
+            .ok(),
+        std::env::var("LOCALAPPDATA")
+            .map(|l| PathBuf::from(l).join("Programs/ChatGPT-Fix/ntc/codex-live-token-cost.js"))
+            .ok(),
+    ];
+    for candidate in local_candidates.into_iter().flatten() {
+        if candidate.is_file() {
+            if let Some(parent) = dst.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if fs::copy(&candidate, dst).is_ok() {
+                return true;
+            }
+        }
+    }
+    if let Some(parent) = dst.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    // Download is skipped when CHATGPT_FIX_NTC_NO_DOWNLOAD is set (tests,
+    // explicit offline preference). The caller's fail-closed check then
+    // reports the missing userscript.
+    if std::env::var_os("CHATGPT_FIX_NTC_NO_DOWNLOAD").is_some() {
+        return false;
+    }
+    let quoted = dst.to_string_lossy().replace('\'', "''");
+    let ok = std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &format!(
+                "Invoke-WebRequest -Uri '{}' -OutFile '{}' -UseBasicParsing",
+                NTC_USERSCRIPT_URL, quoted
+            ),
+        ])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    ok && dst.is_file()
+}
+
 /// Re-applies the native token-cost overlay to the app.asar COPY inside a
 /// launcher-owned baseline dir (never the official package). The fixture dir
 /// must contain `app.asar` and `ntc-overlay/userscript.js`. Emits a
@@ -467,6 +533,14 @@ fn run_ntc_reapply(root: &Path) -> ExitCode {
             root.display()
         );
         return ExitCode::from(3);
+    }
+    // Auto-fetch the userscript when the overlay file is missing: local copy
+    // first, then the upstream GitHub tag. The plugin stays optional — if it
+    // is still unavailable the fail-closed check below reports it.
+    if !ensure_userscript(&userscript) {
+        eprintln!(
+            "ntc_reapply_warn: userscript unavailable locally and download failed; reapply will fail closed"
+        );
     }
     if !userscript.is_file() {
         eprintln!(

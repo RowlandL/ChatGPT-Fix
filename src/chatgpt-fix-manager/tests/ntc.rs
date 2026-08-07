@@ -53,6 +53,9 @@ fn ntc_reapply_fails_closed_when_userscript_missing() {
     let output = Command::new(BINARY)
         .args(["ntc-reapply", "--fixture-root"])
         .arg(&root)
+        .env("CHATGPT_FIX_NTC_NO_DOWNLOAD", "1")
+        .env("USERPROFILE", &root)
+        .env("LOCALAPPDATA", &root)
         .output()
         .expect("run manager ntc-reapply");
     assert_eq!(output.status.code(), Some(3), "stderr: {:?}", output.stderr);
