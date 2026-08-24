@@ -5,7 +5,7 @@
 //!
 //! Layout:
 //!   [ ChatGPT-Fix 安装程序 ]          (window title)
-//!   ChatGPT-Fix 1.0.1                (product label)
+//!   ChatGPT-Fix 1.0.2                (product label)
 //!   将把官方 ChatGPT 桌面版复制到用户目录运行…… (guide text)
 //!   [ status text ]                  (status label)
 //!   [==============progress========] (progress bar)
@@ -397,10 +397,11 @@ pub fn run_gui_install() -> std::process::ExitCode {
     // administrator): without admin rights copying the official package out
     // of WindowsApps fails with an access-denied error.
     // CHATGPT_FIX_SETUP_NO_ELEVATE=1 skips elevation (tests / explicit).
-    if !is_admin() && std::env::var_os("CHATGPT_FIX_SETUP_NO_ELEVATE").is_none() {
-        if elevate_and_restart() {
-            return std::process::ExitCode::SUCCESS;
-        }
+    if !is_admin()
+        && std::env::var_os("CHATGPT_FIX_SETUP_NO_ELEVATE").is_none()
+        && elevate_and_restart()
+    {
+        return std::process::ExitCode::SUCCESS;
         // UAC cancelled or failed; continue in non-elevated mode.
         // The GUI will show a warning but the user can still retry.
     }

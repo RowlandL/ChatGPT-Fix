@@ -12,41 +12,23 @@ use std::process::ExitCode;
 
 const PRODUCT_NAME: &str = "ChatGPT-Fix-Setup";
 
-/// Locate a usable PowerShell executable: try pwsh.exe (PowerShell 7) first,
-/// then fall back to powershell.exe (Windows PowerShell). Returns the first
-/// one found on PATH, or "powershell.exe" as the ultimate fallback.
-fn find_powershell() -> String {
-    for name in &["pwsh.exe", "powershell.exe"] {
-        if which(name).is_some() {
-            return name.to_string();
-        }
+/// Resolve only the absolute inbox Windows PowerShell helper. Setup must not
+/// execute a PATH-controlled helper while discovering an official package.
+fn find_powershell() -> Result<PathBuf, String> {
+    let path =
+        PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_owned()))
+            .join("System32")
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe");
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(format!(
+            "Windows PowerShell helper not found at {}",
+            path.display()
+        ))
     }
-    // Ultimate fallback: Windows ships powershell.exe in a well-known path.
-    "powershell.exe".to_owned()
-}
-
-/// Minimal `which` for Windows: checks PATH and the standard System32 dir.
-fn which(exe: &str) -> Option<String> {
-    // Check each directory in PATH.
-    if let Ok(paths) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&paths) {
-            let candidate = dir.join(exe);
-            if candidate.is_file() {
-                return Some(candidate.to_string_lossy().into_owned());
-            }
-        }
-    }
-    // Also check System32 (the canonical location for powershell.exe).
-    let sys32 = PathBuf::from(
-        std::env::var("SystemRoot")
-            .unwrap_or_else(|_| "C:\\Windows".to_owned()),
-    )
-    .join("System32")
-    .join(exe);
-    if sys32.is_file() {
-        return Some(sys32.to_string_lossy().into_owned());
-    }
-    None
 }
 const INSTALL_SUBDIR: &str = "ChatGPT-Fix";
 const BIN_SUBDIR: &str = "bin";
@@ -437,7 +419,13 @@ fn complete_one_click_config(root: &Path, launcher: &Path, progress: &dyn Fn(u64
 
     // 1. Detect the official package install location via Get-AppxPackage.
     let mut app_root: Option<String> = None;
-    let ps = find_powershell();
+    let ps = match find_powershell() {
+        Ok(path) => path,
+        Err(error) => {
+            eprintln!("package discovery failed closed: {error}");
+            return false;
+        }
+    };
     if let Ok(output) = std::process::Command::new(&ps)
         .args([
             "-NoProfile",

@@ -1,22 +1,46 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use chatgpt_fix_core::{
-    STAGING_SCHEMA, StagingState, read_staging_state, stage_from_probe, verify_staging,
+    LiveInspectionV1, STAGING_SCHEMA, StagingState, read_staging_state, stage_from_probe,
+    verify_staging,
 };
+
+static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 fn fixture_probe() -> PathBuf {
-    repository_root().join("tests/staging-fixtures/probe.json")
+    let template = repository_root().join("tests/staging-fixtures/probe.json");
+    let mut inspection =
+        LiveInspectionV1::from_json(&fs::read(template).expect("read fixture probe template"))
+            .expect("parse fixture probe template");
+    let source = repository_root()
+        .join("tests/staging-fixtures/source/app")
+        .canonicalize()
+        .expect("canonicalize fixture app source");
+    inspection.install_location = source.to_string_lossy().into_owned();
+    let probe = staging_dir("probe").join("probe.json");
+    fs::create_dir_all(probe.parent().expect("dynamic probe has parent"))
+        .expect("create dynamic probe directory");
+    fs::write(
+        &probe,
+        inspection
+            .to_json()
+            .expect("serialize dynamic fixture probe"),
+    )
+    .expect("write dynamic fixture probe");
+    probe
 }
 
 fn staging_dir(tag: &str) -> PathBuf {
+    let serial = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
     let out = std::env::temp_dir().join(format!(
-        "chatgpt-fix-p3-staging-{tag}-{}",
-        std::process::id()
+        "chatgpt-fix-p3-staging-{tag}-{}-{serial}",
+        std::process::id(),
     ));
     let _ = fs::remove_dir_all(&out);
     out
@@ -108,24 +132,17 @@ fn stage_refuses_live_windowsapps_path() {
     let probe_path = staging_dir("live").join("probe.json");
     fs::create_dir_all(probe_path.parent().expect("probe has parent"))
         .expect("create probe directory");
-    let source = fs::read_to_string(fixture_probe()).expect("read fixture probe");
+    let mut inspection = LiveInspectionV1::from_json(
+        &fs::read(fixture_probe()).expect("read dynamic fixture probe"),
+    )
+    .expect("parse dynamic fixture probe");
     let live_root = r"C:\Program Files\WindowsApps\OpenAI.Codex_9.9.9.0_x64__2p2nqsd0c76g0";
-    // The fixture probe was written with json.dump, so backslashes are
-    // already JSON-escaped (doubled). Re-escape the live root the same way.
-    let live_root_escaped = live_root.replace('\\', "\\\\");
-    // Locate the install_location value inside the JSON text and replace it.
-    let marker = "\"install_location\": \"";
-    let start = source.find(marker).expect("install_location present");
-    let after = &source[start + marker.len()..];
-    let end = after.find('"').expect("install_location value terminates");
-    let live_probe = format!(
-        "{}{}{}{}",
-        &source[..start],
-        marker,
-        live_root_escaped,
-        &after[end..]
-    );
-    fs::write(&probe_path, live_probe).expect("write live probe");
+    inspection.install_location = live_root.to_owned();
+    fs::write(
+        &probe_path,
+        inspection.to_json().expect("serialize live probe"),
+    )
+    .expect("write live probe");
 
     let out = staging_dir("live-out");
     let err = stage_from_probe(&probe_path, &out).expect_err("live package must be refused");
@@ -143,20 +160,17 @@ fn stage_refuses_case_and_slash_variant_of_windowsapps() {
     let probe_path = staging_dir("live-case").join("probe.json");
     fs::create_dir_all(probe_path.parent().expect("probe has parent"))
         .expect("create probe directory");
-    let source = fs::read_to_string(fixture_probe()).expect("read fixture probe");
+    let mut inspection = LiveInspectionV1::from_json(
+        &fs::read(fixture_probe()).expect("read dynamic fixture probe"),
+    )
+    .expect("parse dynamic fixture probe");
     let live_root = "c:/program files/windowsapps/OpenAI.Codex_9.9.9.0_x64__2p2nqsd0c76g0";
-    let marker = "\"install_location\": \"";
-    let start = source.find(marker).expect("install_location present");
-    let after = &source[start + marker.len()..];
-    let end = after.find('"').expect("install_location value terminates");
-    let live_probe = format!(
-        "{}{}{}{}",
-        &source[..start],
-        marker,
-        live_root,
-        &after[end..]
-    );
-    fs::write(&probe_path, live_probe).expect("write live probe");
+    inspection.install_location = live_root.to_owned();
+    fs::write(
+        &probe_path,
+        inspection.to_json().expect("serialize live-case probe"),
+    )
+    .expect("write live probe");
 
     let out = staging_dir("live-case-out");
     let err = stage_from_probe(&probe_path, &out).expect_err("live package must be refused");

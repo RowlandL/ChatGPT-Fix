@@ -24,6 +24,17 @@ fn temp_localappdata(tag: &str) -> PathBuf {
     dir
 }
 
+fn temp_appdata(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "chatgpt-fix-setup-appdata-{tag}-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("Microsoft/Windows/Start Menu/Programs"))
+        .expect("create isolated Start Menu Programs dir");
+    dir
+}
+
 fn write_fake_artifacts(dir: &Path) {
     for name in [
         "ChatGPT-Fix-Launcher.exe",
@@ -43,7 +54,7 @@ fn prints_exact_version() {
         .expect("run chatgpt-fix-setup");
 
     assert_eq!(output.status.code(), Some(0), "stderr: {:?}", output.stderr);
-    assert_eq!(output.stdout, b"ChatGPT-Fix-Setup 1.0.1\n");
+    assert_eq!(output.stdout, b"ChatGPT-Fix-Setup 1.0.2\n");
     assert!(output.stderr.is_empty(), "stderr: {:?}", output.stderr);
 }
 
@@ -79,8 +90,10 @@ fn install_requires_source_flag() {
 fn install_fails_closed_when_source_missing_artifacts() {
     let src = temp_source("empty");
     let lapp = temp_localappdata("empty");
+    let appdata = temp_appdata("empty");
     let output = Command::new(BINARY)
         .env("LOCALAPPDATA", &lapp)
+        .env("APPDATA", &appdata)
         .args(["install", "--source"])
         .arg(&src)
         .output()
@@ -100,8 +113,10 @@ fn install_copies_artifacts_and_prints_receipt() {
     let src = temp_source("ok");
     write_fake_artifacts(&src);
     let lapp = temp_localappdata("ok");
+    let appdata = temp_appdata("ok");
     let output = Command::new(BINARY)
         .env("LOCALAPPDATA", &lapp)
+        .env("APPDATA", &appdata)
         .args(["install", "--source"])
         .arg(&src)
         .output()
@@ -130,6 +145,9 @@ fn install_copies_artifacts_and_prints_receipt() {
     ] {
         assert!(bin.join(name).is_file(), "missing installed {name}");
     }
+    let shortcuts = appdata.join("Microsoft/Windows/Start Menu/Programs");
+    assert!(shortcuts.join("ChatGPT.lnk").is_file());
+    assert!(shortcuts.join("ChatGPT-Fix-Launcher.lnk").is_file());
 }
 
 #[test]
@@ -137,6 +155,7 @@ fn install_backs_up_existing_files() {
     let src = temp_source("backup");
     write_fake_artifacts(&src);
     let lapp = temp_localappdata("backup");
+    let appdata = temp_appdata("backup");
     // Pre-place an OLD Launcher at the destination.
     let bin = lapp.join("Programs/ChatGPT-Fix/bin");
     fs::create_dir_all(&bin).expect("create bin");
@@ -145,6 +164,7 @@ fn install_backs_up_existing_files() {
 
     let output = Command::new(BINARY)
         .env("LOCALAPPDATA", &lapp)
+        .env("APPDATA", &appdata)
         .args(["install", "--source"])
         .arg(&src)
         .output()
@@ -179,9 +199,11 @@ fn uninstall_removes_artifacts_keeps_backups() {
     let src = temp_source("uninstall");
     write_fake_artifacts(&src);
     let lapp = temp_localappdata("uninstall");
+    let appdata = temp_appdata("uninstall");
     // Install first.
     let install = Command::new(BINARY)
         .env("LOCALAPPDATA", &lapp)
+        .env("APPDATA", &appdata)
         .args(["install", "--source"])
         .arg(&src)
         .output()
@@ -196,6 +218,7 @@ fn uninstall_removes_artifacts_keeps_backups() {
     // Uninstall.
     let out = Command::new(BINARY)
         .env("LOCALAPPDATA", &lapp)
+        .env("APPDATA", &appdata)
         .arg("uninstall")
         .output()
         .expect("run setup uninstall");

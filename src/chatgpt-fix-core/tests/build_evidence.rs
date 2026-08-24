@@ -726,25 +726,32 @@ const P8_SOURCE_COMMIT: &str = "82cf95e";
 const P8_RELEASE_DIR: &str = "records/builds/1.0.0-win-x64";
 const P8_LOCK_SHA: &str = "e187ffbd8a24d7c6e544b4cb42322b4507c15a1b59225931d7911eef47b4065d";
 
-const P8_ARTIFACTS: [(&str, u64, &str); 4] = [
+// v1.0.0 assets were replaced without a version bump. The current hash is
+// authoritative for checksums/receipts; the superseded hash remains in the
+// original SBOM and is preserved in each receipt's replacement_note.
+const P8_ARTIFACTS: [(&str, u64, &str, &str); 4] = [
     (
         "ChatGPT-Fix-Launcher.exe",
-        325_120,
+        453_120,
+        "db666326cc8a74564f40ec01f2340d250bb0f171239f853eb0fecc7cc503d868",
         "4c8225f2d5edd9c7105b526139b28a711891954eea7cde11eb8142f08289f8ee",
     ),
     (
         "ChatGPT-Fix-Manager.exe",
-        423_936,
+        569_344,
+        "f1bc3cbedd934856a59194ed2e9cd9d9117e44bf14ec0ce729a95bc6071f8a50",
         "f9dcfecd50998f618fc301b16c69c391f7939ade0d4d0ea0586009580aff8b24",
     ),
     (
         "ChatGPT-Fix-Packer.exe",
-        511_488,
+        526_848,
+        "38bc05a95b977200ea45298c5a3fbbdf756ceba5ecd55a001c7c99896792282e",
         "103d7635294c919d9bb4d148e6d7190189b765bb5e78329537d351f8352d6709",
     ),
     (
         "ChatGPT-Fix-Setup.exe",
-        134_144,
+        69_632,
+        "e8a9c1c238513f6240c4f90622f4ccecae67a14002a3bd93da0a04c9407fb3cd",
         "b4a06e01766bf95470fb4308f2f969f7c98ad59b9c90c26cbb2f81230cfa9f85",
     ),
 ];
@@ -779,14 +786,14 @@ fn p8_tracked_build_evidence_is_exact_and_self_consistent() {
 
     let expected_checksums = P8_ARTIFACTS
         .iter()
-        .map(|(name, _, sha256)| format!("{sha256}  out/1.0.0/win-x64/{name}\n"))
+        .map(|(name, _, sha256, _)| format!("{sha256}  out/1.0.0/win-x64/{name}\n"))
         .collect::<String>();
     let actual_checksums = fs::read_to_string(root.join("checksums/1.0.0-win-x64.sha256"))
         .expect("read release checksums")
         .replace("\r\n", "\n");
     assert_eq!(actual_checksums, expected_checksums);
 
-    for (name, _, artifact_sha256) in P8_ARTIFACTS {
+    for (name, _, artifact_sha256, superseded_sha256) in P8_ARTIFACTS {
         let receipt = ReceiptV1 {
             operation: "build".to_owned(),
             status: "success".to_owned(),
@@ -803,7 +810,16 @@ fn p8_tracked_build_evidence_is_exact_and_self_consistent() {
             signing_status: "unsigned".to_owned(),
         };
         receipt.validate().expect("receipt must validate");
-        let expected = format!("{}\n", receipt.to_json().expect("receipt must serialize"));
+        let expected = format!(
+            "{{\"schema\": \"chatgpt_fix.receipt.v1\", \"operation\": \"build\", \"status\": \"success\", \
+             \"plan_sha256\": \"{}\", \"artifact\": \"out/1.0.0/win-x64/{name}\", \
+             \"artifact_sha256\": \"{artifact_sha256}\", \"source_commit\": \"82cf95e\", \
+             \"toolchain\": \"{TOOLCHAIN}\", \"signing_status\": \"unsigned\", \
+             \"replacement_note\": \"asset replaced on the v1.0.0 release without a version bump; \
+             artifact_sha256 synced to the published asset on 2026-08-09, \
+             superseded_sha256={superseded_sha256}, superseded_source_commit=82cf95e\"}}\n",
+            plan_sha256.as_str()
+        );
         let actual = fs::read_to_string(release_dir.join(format!("{name}.receipt.json")))
             .expect("read artifact receipt");
         assert_eq!(actual, expected, "receipt for {name}");
@@ -834,8 +850,11 @@ fn p8_tracked_build_evidence_is_exact_and_self_consistent() {
     assert!(sbom.contains(r#""name": "rust-standard-library""#));
     assert!(sbom.contains(r#""versionInfo": "1.97.1""#));
     assert!(sbom.contains(r#""licenseDeclared": "Apache-2.0 OR MIT""#));
-    for (name, _, sha256) in P8_ARTIFACTS {
+    for (name, _, _, superseded_sha256) in P8_ARTIFACTS {
         assert!(sbom.contains(name), "SBOM missing {name}");
-        assert!(sbom.contains(sha256), "SBOM missing hash for {name}");
+        assert!(
+            sbom.contains(superseded_sha256),
+            "original SBOM missing superseded hash for {name}"
+        );
     }
 }

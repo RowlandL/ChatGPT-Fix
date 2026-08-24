@@ -1,0 +1,147 @@
+name: Release v1.0.2
+
+on:
+  push:
+    tags:
+      - 'v1.0.2'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-v1.0.2
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/tags/v1.0.2'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout immutable release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install locked Rust toolchain
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
+          rustup default 1.97.1
+          rustc --version
+          cargo --version
+
+      - name: Assert version and historical immutability
+        run: |
+          if ((git describe --exact-match --tags HEAD) -ne 'v1.0.2') { throw 'workflow is not running at v1.0.2' }
+          if ((Get-Content VERSION -Raw).Trim() -ne '1.0.2') { throw 'VERSION is not 1.0.2' }
+          if ((git rev-parse 'v1.0.1^{commit}') -ne '22260d0695efe52f9546a9fa236a7a40b21eeb33') { throw 'historical v1.0.1 tag moved' }
+          git diff --exit-code 77919fe58fa7a3c4204d69d16cbeeb042aa5762f -- checksums/1.0.1-win-x64.sha256 records/builds/1.0.1-win-x64 records/release-notes-v1.0.1.md
+          if ($LASTEXITCODE -ne 0) { throw 'historical v1.0.1 evidence changed' }
+
+      - name: Check, lint, test, and build workspace
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo test --locked --workspace
+          cargo build --locked --workspace --release
+
+      - name: Assemble and verify v1.0.2
+        id: payload
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'chatgpt-fix-v1.0.2-stage'
+          $package = Join-Path $env:RUNNER_TEMP 'ChatGPT-Fix-v1.0.2-win-x64'
+          $releaseDir = Join-Path $env:RUNNER_TEMP 'chatgpt-fix-v1.0.2-release'
+          New-Item -ItemType Directory -Path (Join-Path $stage 'scripts'), (Join-Path $package 'scripts'), $releaseDir -Force | Out-Null
+          Copy-Item target\release\chatgpt-fix-launcher.exe (Join-Path $stage 'ChatGPT-Fix-Launcher.exe')
+          Copy-Item target\release\chatgpt-fix-manager.exe (Join-Path $stage 'ChatGPT-Fix-Manager.exe')
+          Copy-Item target\release\chatgpt-fix-packer.exe (Join-Path $stage 'ChatGPT-Fix-Packer.exe')
+          Copy-Item src\chatgpt-fix-manager\scripts\inject-native-token-cost.js (Join-Path $stage 'scripts\inject-native-token-cost.js')
+          Copy-Item src\chatgpt-fix-manager\scripts\inject-native-token-cost.js (Join-Path $stage 'inject-native-token-cost.js')
+          .\scripts\test-setup-hardening.ps1
+          .\scripts\test-setup-isolation.ps1
+          .\scripts\test-setup-static.ps1 -OutputDirectory $stage -ReleaseVersion 1.0.2 |
+            Set-Content -Encoding utf8 (Join-Path $releaseDir 'setup-build.json')
+          .\scripts\verify-release.ps1 -StagingDirectory $stage -ReleaseVersion 1.0.2 -RepositoryRoot $PWD |
+            Set-Content -Encoding utf8 (Join-Path $releaseDir 'verification.json')
+          foreach ($name in @('ChatGPT-Fix-Launcher.exe','ChatGPT-Fix-Manager.exe','ChatGPT-Fix-Packer.exe','ChatGPT-Fix-Setup.exe')) {
+            Copy-Item (Join-Path $stage $name) (Join-Path $package $name)
+            Copy-Item (Join-Path $stage $name) (Join-Path $releaseDir $name)
+          }
+          Copy-Item (Join-Path $stage 'scripts\inject-native-token-cost.js') (Join-Path $package 'scripts\inject-native-token-cost.js')
+          Copy-Item (Join-Path $stage 'inject-native-token-cost.js') (Join-Path $releaseDir 'inject-native-token-cost.js')
+          Compress-Archive -Path (Join-Path $package '*') -DestinationPath (Join-Path $releaseDir 'ChatGPT-Fix-v1.0.2-win-x64.zip') -CompressionLevel Optimal
+          $runtimeAssetNames = @('ChatGPT-Fix-Launcher.exe','ChatGPT-Fix-Manager.exe','ChatGPT-Fix-Packer.exe','ChatGPT-Fix-Setup.exe','inject-native-token-cost.js','ChatGPT-Fix-v1.0.2-win-x64.zip')
+          $runtimeSumLines = foreach ($name in $runtimeAssetNames) {
+            $hash = (Get-FileHash -LiteralPath (Join-Path $releaseDir $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $name"
+          }
+          $sourceCommit = git rev-parse HEAD
+          [ordered]@{
+            schema = 'chatgpt_fix.release_receipt.v1'
+            version = '1.0.2'
+            tag = 'v1.0.2'
+            source_commit = $sourceCommit
+            toolchain = (rustc --version)
+            target = 'x86_64-pc-windows-msvc'
+            signing_status = 'unsigned'
+            artifacts = $runtimeSumLines
+          } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $releaseDir 'ChatGPT-Fix-v1.0.2-release-receipt.json')
+          [ordered]@{
+            spdxVersion = 'SPDX-2.3'
+            dataLicense = 'CC0-1.0'
+            SPDXID = 'SPDXRef-DOCUMENT'
+            name = 'ChatGPT-Fix-v1.0.2-win-x64'
+            documentNamespace = "https://github.com/RowlandL/ChatGPT-Fix/sbom/v1.0.2/$sourceCommit"
+            creationInfo = [ordered]@{ created = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); creators = @('Tool: GitHub-Actions') }
+            packages = @([ordered]@{ name = 'ChatGPT-Fix'; SPDXID = 'SPDXRef-Package-ChatGPT-Fix'; versionInfo = '1.0.2'; downloadLocation = 'NOASSERTION'; filesAnalyzed = $false; licenseConcluded = 'MIT'; licenseDeclared = 'MIT'; copyrightText = 'NOASSERTION' })
+            relationships = @([ordered]@{ spdxElementId = 'SPDXRef-DOCUMENT'; relationshipType = 'DESCRIBES'; relatedSpdxElement = 'SPDXRef-Package-ChatGPT-Fix' })
+          } | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 (Join-Path $releaseDir 'ChatGPT-Fix-v1.0.2-sbom.spdx.json')
+          Copy-Item records\release-notes-v1.0.2.md (Join-Path $releaseDir 'RELEASE-NOTES.md')
+          $hashedAssetNames = $runtimeAssetNames + @(
+            'ChatGPT-Fix-v1.0.2-release-receipt.json',
+            'ChatGPT-Fix-v1.0.2-sbom.spdx.json',
+            'setup-build.json',
+            'verification.json',
+            'RELEASE-NOTES.md'
+          )
+          $sumLines = foreach ($name in $hashedAssetNames) {
+            $hash = (Get-FileHash -LiteralPath (Join-Path $releaseDir $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $name"
+          }
+          $sumLines | Set-Content -Encoding ascii (Join-Path $releaseDir 'SHA256SUMS.txt')
+          .\scripts\verify-downloaded-release.ps1 -DownloadDirectory $releaseDir -ExpectedVersion 1.0.2 -ExpectedSourceCommit $sourceCommit
+          "release_dir=$releaseDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload immutable release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatgpt-fix-v1.0.2-release
+          path: ${{ steps.payload.outputs.release_dir }}
+
+      - name: Create GitHub Release without replacement
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          gh release view v1.0.2 *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'v1.0.2 already exists; refusing to replace assets' }
+          $releaseDir = '${{ steps.payload.outputs.release_dir }}'
+          $assets = @(
+            (Join-Path $releaseDir 'ChatGPT-Fix-Launcher.exe'),
+            (Join-Path $releaseDir 'ChatGPT-Fix-Manager.exe'),
+            (Join-Path $releaseDir 'ChatGPT-Fix-Packer.exe'),
+            (Join-Path $releaseDir 'ChatGPT-Fix-Setup.exe'),
+            (Join-Path $releaseDir 'inject-native-token-cost.js'),
+            (Join-Path $releaseDir 'ChatGPT-Fix-v1.0.2-win-x64.zip'),
+            (Join-Path $releaseDir 'SHA256SUMS.txt'),
+            (Join-Path $releaseDir 'ChatGPT-Fix-v1.0.2-release-receipt.json'),
+            (Join-Path $releaseDir 'ChatGPT-Fix-v1.0.2-sbom.spdx.json'),
+            (Join-Path $releaseDir 'setup-build.json'),
+            (Join-Path $releaseDir 'verification.json'),
+            (Join-Path $releaseDir 'RELEASE-NOTES.md')
+          )
+          gh release create v1.0.2 --verify-tag --title 'ChatGPT-Fix v1.0.2' --notes-file (Join-Path $releaseDir 'RELEASE-NOTES.md') $assets

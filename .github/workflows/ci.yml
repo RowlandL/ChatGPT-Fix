@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'release/**'
+      - 'codex/**'
+  workflow_dispatch:
+
+jobs:
+  windows-release-verification:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install locked Rust toolchain
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
+          rustup default 1.97.1
+          rustc --version
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test workspace
+        run: cargo test --workspace
+
+      - name: Build release workspace
+        run: cargo build --workspace --release
+
+      - name: Assemble isolated release payload
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'chatgpt-fix-release-staging'
+          New-Item -ItemType Directory -Path (Join-Path $stage 'scripts') -Force | Out-Null
+          Copy-Item target\release\chatgpt-fix-launcher.exe (Join-Path $stage 'ChatGPT-Fix-Launcher.exe')
+          Copy-Item target\release\chatgpt-fix-manager.exe (Join-Path $stage 'ChatGPT-Fix-Manager.exe')
+          Copy-Item target\release\chatgpt-fix-packer.exe (Join-Path $stage 'ChatGPT-Fix-Packer.exe')
+          Copy-Item src\chatgpt-fix-manager\scripts\inject-native-token-cost.js (Join-Path $stage 'scripts\inject-native-token-cost.js')
+          Copy-Item src\chatgpt-fix-manager\scripts\inject-native-token-cost.js (Join-Path $stage 'inject-native-token-cost.js')
+          $releaseVersion = (Get-Content VERSION -Raw).Trim()
+          .\scripts\test-setup-hardening.ps1
+          .\scripts\test-setup-isolation.ps1
+          .\scripts\test-setup-static.ps1 -OutputDirectory $stage -ReleaseVersion $releaseVersion
+
+      - name: Verify release payload without executing installer
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'chatgpt-fix-release-staging'
+          $releaseVersion = (Get-Content VERSION -Raw).Trim()
+          .\scripts\verify-release.ps1 -StagingDirectory $stage -ReleaseVersion $releaseVersion -RepositoryRoot $PWD |
+            Tee-Object -FilePath (Join-Path $stage 'verification.json')
+
+      - name: Upload verification staging
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatgpt-fix-ci-staging-${{ github.sha }}
+          path: ${{ runner.temp }}/chatgpt-fix-release-staging

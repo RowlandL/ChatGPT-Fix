@@ -183,7 +183,7 @@ fn launch_from_pointer_rejects_unverified_legacy_schema() {
 
     let root = program_root("legacy-unverified");
     let baseline = root.join("baseline");
-    fs::create_dir_all(&baseline.join("app")).expect("create app dir");
+    fs::create_dir_all(baseline.join("app")).expect("create app dir");
     fs::write(baseline.join("app/ChatGPT.exe"), b"x").expect("write fake exe");
     // Note: this baseline is rejected before spawn, so the placeholder is
     // never executed; a text file is fine here.
