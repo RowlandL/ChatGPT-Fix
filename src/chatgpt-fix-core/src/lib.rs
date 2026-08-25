@@ -12,6 +12,7 @@ mod ntc;
 mod ownership;
 mod path;
 mod probe;
+mod runtime_config;
 mod schema;
 mod sha256;
 mod shutdown;
@@ -36,6 +37,7 @@ pub use probe::{
     A2_P2_ENV, inspect_live_json, inspect_probe_json, plan_from_probe, plan_live_json,
     plan_probe_json,
 };
+pub use runtime_config::{sanitize_codex_config, sanitize_codex_config_text};
 pub use schema::{
     BASELINE_SCHEMA, BaselineV2, BreakawayEvent, CONFIG_PROPOSAL_SCHEMA, ConfigApplyMode,
     ConfigProposalState, ConfigProposalV1, ConfigScope, GENERATION_SCHEMA, GenerationState,

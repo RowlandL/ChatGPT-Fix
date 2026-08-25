@@ -1,4 +1,4 @@
-# ChatGPT-Fix v1.0.2
+# ChatGPT-Fix v1.0.3
 
 Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，修复 NTFS 内核非分页池泄漏，集成本地 Token 用量统计。
 
@@ -17,19 +17,21 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 
 ## 安装使用
 
-1. 从 [Releases](https://github.com/RowlandL/ChatGPT-Fix/releases) 下载 v1.0.2 的 zip（推荐，内部保留 `scripts/`）并解压；也可以将四个 EXE 与扁平文件名 `inject-native-token-cost.js` 下载到同一目录
+1. 从 [Releases](https://github.com/RowlandL/ChatGPT-Fix/releases) 下载 v1.0.3 的 zip（推荐，内部保留 `scripts/`）并解压；也可以将四个 EXE 与扁平文件名 `inject-native-token-cost.js` 下载到同一目录
 2. 需先安装官方 OpenAI.Codex（ChatGPT 桌面版）
 3. 双击运行 `ChatGPT-Fix-Setup.exe`，安装器会从其所在 payload 目录完成安装或升级
 4. 双击开始菜单的 **ChatGPT-Fix-Launcher** 或 **ChatGPT** 启动
 
-## v1.0.2 发布契约
+## v1.0.3 发布契约
 
-- 修复 GitHub issue #2（全新安装缺少自有 injector）与 issue #3（缺少 `ChatGPT` 开始菜单入口）。
+- 保留 v1.0.2 对 GitHub issue #2（全新安装缺少自有 injector）与 issue #3（缺少 `ChatGPT` 开始菜单入口）的修复。
+- 启动前清洗保留的 `openai-bundled` 本地 marketplace 配置，并把旧版 `windows.sandbox = "low"` 归一为 `elevated`，避免跨机器配置污染导致降权或 app-server 重试。
+- 发布校验从单一扫描 Manager 改为扫描全部四个 EXE，并仅依据当前构建环境推导禁止的构建路径标记，不再写死某台机器的 `D:\project` / `C:\Users`。
 - 发布 payload 共 5 项：4 个 ChatGPT-Fix EXE，外加本项目自有的 injector；injector 是发布物的一部分，供 Manager 使用。
 - 安装器同时接受 zip 解压后的 `scripts/inject-native-token-cost.js` 和五项扁平下载目录中的 `inject-native-token-cost.js`；不会从源码树依赖构建机路径。
 - 第三方 Token 用量 userscript 不随包分发；仍按其上游来源与许可单独获取。
 - 安装完成必须同时提供 `ChatGPT-Fix-Launcher` 和 `ChatGPT` 两个开始菜单快捷方式。
-- v1.0.2 仍为未签名（unsigned）发布。构建后才可生成并复核对应的 hash、SBOM、测试结果和 receipt。
+- v1.0.3 仍为未签名（unsigned）发布。构建后才可生成并复核对应的 hash、SBOM、测试结果和 receipt。
 - v1.0.1 的发布资产、checksums、receipt 与其他历史记录不得改写。
 
 ## 第三方组件归属与声明
@@ -53,7 +55,7 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 - Rust `x86_64-pc-windows-msvc`，纯标准库（最小 Win32 FFI），无外部 crate 依赖
 - 发布前运行测试与 clippy；仅在实际构建后发布对应的校验和、SBOM 与 receipt
 - 构建产物哈希见各 Release 的 `SHA256SUMS.txt`
-- 下载全部 Release 资产后可运行 `scripts/verify-downloaded-release.ps1 -DownloadDirectory <目录> -ExpectedVersion 1.0.2 -ExpectedSourceCommit <tag commit>` 独立复核资产、zip、receipt 与 SBOM
+- 下载全部 Release 资产后可运行 `scripts/verify-downloaded-release.ps1 -DownloadDirectory <目录> -ExpectedVersion 1.0.3 -ExpectedSourceCommit <tag commit>` 独立复核资产、zip、receipt 与 SBOM
 
 ## 许可证
 

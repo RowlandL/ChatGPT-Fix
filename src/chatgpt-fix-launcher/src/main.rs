@@ -78,6 +78,11 @@ fn main() -> ExitCode {
 /// update (new version directory) never breaks the launch. Writes a launch
 /// receipt to stdout. A4a-authorized.
 fn run_live_launch(program_root: &Path) -> ExitCode {
+    if let Err(error) = chatgpt_fix_core::sanitize_codex_config() {
+        // A stale optional config entry must never prevent the official app
+        // from starting; the warning remains available to a console caller.
+        eprintln!("config_sanitize_warning: {error}");
+    }
     let (launch, spawned_pid) = match chatgpt_fix_core::launch_from_pointer(program_root) {
         Ok(pair) => pair,
         Err(error) => {

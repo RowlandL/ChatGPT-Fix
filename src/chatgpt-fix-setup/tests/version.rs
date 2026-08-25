@@ -54,7 +54,7 @@ fn prints_exact_version() {
         .expect("run chatgpt-fix-setup");
 
     assert_eq!(output.status.code(), Some(0), "stderr: {:?}", output.stderr);
-    assert_eq!(output.stdout, b"ChatGPT-Fix-Setup 1.0.2\n");
+    assert_eq!(output.stdout, b"ChatGPT-Fix-Setup 1.0.3\n");
     assert!(output.stderr.is_empty(), "stderr: {:?}", output.stderr);
 }
 

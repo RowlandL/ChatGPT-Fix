@@ -34,15 +34,41 @@ function Test-ReleaseText {
     }
 }
 
-function Assert-ManagerHasNoBuildPath {
-    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$WorkspaceRoot)
+function Get-BuildPathMarkers {
+    param([Parameter(Mandatory)][string]$WorkspaceRoot)
 
-    $bytes = [System.IO.File]::ReadAllBytes($Path)
-    $text = [System.Text.Encoding]::UTF8.GetString($bytes) + [System.Text.Encoding]::Unicode.GetString($bytes)
-    $workspace = $WorkspaceRoot.Replace('/', '\').TrimEnd('\')
-    foreach ($value in @('D:\project', 'C:\Users', $workspace)) {
-        if ($value -and $text.IndexOf($value, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-            throw "Manager binary contains forbidden build/source path marker: $value"
+    $markers = [System.Collections.Generic.List[string]]::new()
+    foreach ($candidate in @(
+        $WorkspaceRoot,
+        $env:CARGO_MANIFEST_DIR,
+        $env:GITHUB_WORKSPACE,
+        $env:BUILD_SOURCESDIRECTORY,
+        $env:CI_PROJECT_DIR
+    )) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) {
+            continue
+        }
+        $normalized = $candidate.Replace('/', '\').TrimEnd('\')
+        if ($normalized -and -not $markers.Contains($normalized)) {
+            $markers.Add($normalized)
+        }
+    }
+    return $markers.ToArray()
+}
+
+function Assert-ReleaseBinariesHaveNoBuildPath {
+    param(
+        [Parameter(Mandatory)][string[]]$Paths,
+        [Parameter(Mandatory)][string[]]$ForbiddenMarkers
+    )
+
+    foreach ($path in $Paths) {
+        $bytes = [System.IO.File]::ReadAllBytes($path)
+        $text = [System.Text.Encoding]::UTF8.GetString($bytes) + [System.Text.Encoding]::Unicode.GetString($bytes)
+        foreach ($marker in $ForbiddenMarkers) {
+            if ($marker -and $text.IndexOf($marker, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                throw "$([System.IO.Path]::GetFileName($path)) contains a build/source path from the current build environment: $marker"
+            }
         }
     }
 }
@@ -97,12 +123,14 @@ if ($nestedScriptHash -ne $flatScriptHash) {
 }
 
 $artifacts = @()
+$artifactPaths = @()
 foreach ($name in $requiredExecutables) {
     $path = Join-Path $staging $name
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Release payload is missing $name"
     }
     $item = Get-Item -LiteralPath $path
+    $artifactPaths += $path
     $signature = Get-AuthenticodeSignature -LiteralPath $path
     $artifacts += [pscustomobject]@{
         name = $name
@@ -133,7 +161,7 @@ foreach ($entry in @(
     }
 }
 
-Assert-ManagerHasNoBuildPath -Path (Join-Path $staging 'ChatGPT-Fix-Manager.exe') -WorkspaceRoot $repository
+Assert-ReleaseBinariesHaveNoBuildPath -Paths $artifactPaths -ForbiddenMarkers (Get-BuildPathMarkers -WorkspaceRoot $repository)
 
 [pscustomobject]@{
     release_version = $ReleaseVersion
