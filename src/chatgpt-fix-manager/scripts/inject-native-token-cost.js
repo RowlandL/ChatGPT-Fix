@@ -15,6 +15,50 @@
 //   - Steps: extract (with unpacked support) -> add resources/native-token-cost
 //     -> prepend a document-start loader into the main entry -> repack.
 //   - Fail-closed: any step error exits non-zero.
+//
+// Renderer-efficiency patch: the upstream userscript registers a
+// whole-document MutationObserver that re-queries the DOM
+// (project-context-row selector) on every mutation with only a 50 ms
+// debounce. On long conversations (large DOM, constant streaming mutations,
+// software rendering) this saturates the renderer main thread and the UI
+// degrades until it freezes. The loader applies two behavior-preserving
+// adjustments to the userscript source before embedding it:
+//
+//   1. debounce 50 ms -> 300 ms (same semantics, far fewer syncs);
+//   2. skip the expensive full-document query while the HUD is hidden
+//      (the query result only matters when the hub is visible).
+//
+// The patched userscript is used only at runtime for this launcher-owned
+// copy; the upstream file is never modified on disk. The patch is
+// fail-closed: if the exact source patterns are absent (upstream changed),
+// the injection refuses to continue rather than silently shipping a
+// possibly-wrong patch.
+
+const PATCHES = [
+  [
+    "function scheduleHubVisibilitySync(delay = 50) {",
+    "function scheduleHubVisibilitySync(delay = 300) {",
+    "hub-visibility debounce 50->300ms",
+  ],
+  [
+    "const projectContextRow = hasCodexProjectContextRow(doc);",
+    "const projectContextRow = hubVisible() ? hasCodexProjectContextRow(doc) : false;",
+    "skip full-document query while HUD hidden",
+  ],
+];
+
+function patchUserscriptForRendererEfficiency(source) {
+  for (const [from, to, label] of PATCHES) {
+    if (!source.includes(from)) {
+      fail("userscript efficiency patch pattern not found: " + label);
+    }
+  }
+  let patched = source;
+  for (const [from, to] of PATCHES) {
+    patched = patched.split(from).join(to);
+  }
+  return patched;
+}
 
 const fs = require("fs");
 const os = require("os");
@@ -102,7 +146,9 @@ function main() {
     // which blocks any s.textContent approach. executeJavaScript is a
     // privileged main-process API and bypasses CSP. The userscript is an
     // IIFE that calls scheduleStart() itself, so no host is needed.
-    const userscriptContent = fs.readFileSync(userscript, "utf8");
+    const userscriptContent = patchUserscriptForRendererEfficiency(
+      fs.readFileSync(userscript, "utf8")
+    );
     const loader = [
       "// NTC-NATIVE-20260801 loader (launcher-owned overlay)",
       "try {",
