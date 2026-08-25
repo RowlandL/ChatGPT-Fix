@@ -23,11 +23,17 @@ pub fn sanitize_codex_config_text(input: &str) -> (String, bool) {
 /// ("marketplace `openai-bundled` is reserved and cannot be added from this
 /// source"). A config that declares it as a local/path source therefore puts
 /// the app into a repeated marketplace/add + reconcile failure loop on every
-/// focus, which shows up as lag, frozen conversations and a slow start. The
-/// whole `[marketplaces.openai-bundled]` section is dropped; the bundled
-/// plugin enablement sections (`[plugins."browser@openai-bundled"]` etc.)
-/// are preserved because those plugins are known natively and their
-/// enablement remains meaningful.
+/// focus, which shows up as lag, frozen conversations and a slow start.
+///
+/// The whole `[marketplaces.openai-bundled]` section is dropped. The
+/// `[plugins."*@openai-bundled"]` enablement sections are ALSO dropped: the
+/// app-server keeps only bundled plugins that appear in its own discovered
+/// marketplaces, and a config-only enablement for the (never-discoverable)
+/// reserved marketplace makes "configured non-curated plugin no longer exists
+/// in discovered marketplaces" reconcile failures that UNINSTALL the bundled
+/// plugins (browser/chrome/computer-use/visualize/codex-app-tools disappear
+/// from the app). The bundled plugins remain natively available: the app
+/// materializes them from its own resources and re-registers them at startup.
 ///
 /// `codex_home` is retained in the signature for callers that used the
 /// previous normalize-in-place behavior; the reserved marketplace is now
@@ -39,6 +45,7 @@ pub fn sanitize_codex_config_text_for_home(
     let mut output = String::with_capacity(input.len());
     let mut changed = false;
     let mut in_reserved_marketplace = false;
+    let mut in_orphan_plugin = false;
     let mut in_windows_section = false;
 
     for raw_line in input.split_inclusive('\n') {
@@ -49,14 +56,18 @@ pub fn sanitize_codex_config_text_for_home(
 
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             in_reserved_marketplace = trimmed == "[marketplaces.openai-bundled]";
+            in_orphan_plugin = trimmed
+                .strip_prefix("[plugins.\"")
+                .and_then(|rest| rest.strip_suffix("\"]"))
+                .is_some_and(|name| name.ends_with("@openai-bundled"));
             in_windows_section = trimmed == "[windows]";
         }
 
-        if in_reserved_marketplace {
-            // Drop the reserved marketplace declaration entirely (header and
-            // all of its keys). A stale optional entry must never stop the
-            // app, and its presence is what drives the app-server failure
-            // loop. Bundled plugin sections elsewhere in the file are kept.
+        if in_reserved_marketplace || in_orphan_plugin {
+            // Drop the reserved marketplace declaration and the orphan
+            // bundled-plugin enablement sections entirely (headers and their
+            // keys). A stale optional entry must never stop the app, and
+            // either presence drives app-server reconcile failures.
             changed = true;
             continue;
         }

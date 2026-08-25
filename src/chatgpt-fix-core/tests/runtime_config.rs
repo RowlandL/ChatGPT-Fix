@@ -104,7 +104,7 @@ fn desktop_section_absent_without_copy_is_a_noop() {
 }
 
 #[test]
-fn removes_reserved_bundled_marketplace_declaration_while_preserving_plugins() {
+fn removes_reserved_bundled_marketplace_and_orphan_plugin_sections() {
     let input = concat!(
         "approval_policy = \"never\"\n",
         "\n",
@@ -113,6 +113,9 @@ fn removes_reserved_bundled_marketplace_declaration_while_preserving_plugins() {
         "source = 'D:\\\\project\\\\bundled-marketplaces\\\\openai-bundled'\n",
         "\n",
         "[plugins.\"browser@openai-bundled\"]\n",
+        "enabled = true\n",
+        "\n",
+        "[plugins.\"computer-use@openai-bundled\"]\n",
         "enabled = true\n",
     );
 
@@ -123,15 +126,39 @@ fn removes_reserved_bundled_marketplace_declaration_while_preserving_plugins() {
 
     assert!(changed);
     assert!(output.contains("approval_policy = \"never\""));
-    assert!(output.contains("[plugins.\"browser@openai-bundled\"]"));
-    assert!(output.contains("enabled = true"));
-    // The reserved marketplace must not remain registered as an external
-    // source: the app-server rejects it in a loop on every focus.
+    // Reserved marketplace and its orphan plugin enablements must not remain:
+    // the app-server drops bundled plugins whose marketplace is "configured
+    // but never discovered", uninstalling them from the app.
     assert!(!output.contains("[marketplaces.openai-bundled]"));
+    assert!(!output.contains("[plugins.\"browser@openai-bundled\"]"));
+    assert!(!output.contains("[plugins.\"computer-use@openai-bundled\"]"));
     assert!(!output.contains("source_type"));
     assert!(!output.contains("source ="));
     assert!(!output.contains("D:\\\\project"));
     assert!(!output.contains("C:\\\\Users\\\\Alice"));
+}
+
+#[test]
+fn keeps_non_bundled_plugin_enablements() {
+    let input = concat!(
+        "[plugins.\"github@openai-api-curated\"]\n",
+        "enabled = true\n",
+        "\n",
+        "[plugins.\"ponytail@ponytail\"]\n",
+        "enabled = true\n",
+        "\n",
+        "[plugins.\"browser@openai-bundled\"]\n",
+        "enabled = true\n",
+    );
+
+    let (output, changed) = sanitize_codex_config_text(input);
+
+    assert!(changed);
+    // User/curated marketplaces are preserved untouched.
+    assert!(output.contains("[plugins.\"github@openai-api-curated\"]"));
+    assert!(output.contains("[plugins.\"ponytail@ponytail\"]"));
+    // The reserved-marketplace orphan is removed.
+    assert!(!output.contains("browser@openai-bundled"));
 }
 
 #[test]
@@ -148,7 +175,7 @@ fn reserved_marketplace_removal_is_idempotent() {
     let (first, changed) = sanitize_codex_config_text(input);
     assert!(changed);
     assert!(!first.contains("marketplaces.openai-bundled"));
-    assert!(first.contains("[plugins.\"browser@openai-bundled\"]"));
+    assert!(!first.contains("browser@openai-bundled"));
 
     let (second, changed_again) = sanitize_codex_config_text(&first);
     assert!(!changed_again);
