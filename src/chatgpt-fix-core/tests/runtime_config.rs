@@ -1,7 +1,9 @@
-use chatgpt_fix_core::sanitize_codex_config_text;
+use std::path::Path;
+
+use chatgpt_fix_core::{sanitize_codex_config_text, sanitize_codex_config_text_for_home};
 
 #[test]
-fn removes_machine_bound_reserved_marketplace_section() {
+fn normalizes_machine_bound_marketplace_source_without_removing_plugins() {
     let input = concat!(
         "approval_policy = \"never\"\n",
         "\n",
@@ -13,12 +15,17 @@ fn removes_machine_bound_reserved_marketplace_section() {
         "enabled = true\n",
     );
 
-    let (output, changed) = sanitize_codex_config_text(input);
+    let (output, changed) = sanitize_codex_config_text_for_home(
+        input,
+        Some(Path::new(r#"C:\Users\Alice\.codex"#)),
+    );
 
     assert!(changed);
     assert!(output.contains("approval_policy = \"never\""));
     assert!(output.contains("[plugins.\"browser@openai-bundled\"]"));
-    assert!(!output.contains("[marketplaces.openai-bundled]"));
+    assert!(output.contains("[marketplaces.openai-bundled]"));
+    assert!(output.contains("[plugins.\"browser@openai-bundled\"]"));
+    assert!(output.contains("C:\\\\Users\\\\Alice\\\\.codex\\\\.tmp\\\\bundled-marketplaces\\\\openai-bundled"));
     assert!(!output.contains("D:\\\\project"));
 }
 

@@ -1,20 +1,29 @@
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::ContractError;
 
 const BACKUP_NAME: &str = "config.toml.bak-chatgpt-fix";
 
-/// Remove machine-bound marketplace state and repair the legacy Windows
+/// Normalize machine-bound marketplace state and repair the legacy Windows
 /// sandbox spelling that caused the app to reject the whole configuration.
 ///
 /// The transformation is deliberately narrow: plugin enablement, model
 /// selection, provider settings, and all other user-owned values are kept.
 pub fn sanitize_codex_config_text(input: &str) -> (String, bool) {
+    sanitize_codex_config_text_for_home(input, None)
+}
+
+/// Normalize the reserved marketplace source to the current Codex home while
+/// preserving the marketplace and plugin declarations themselves.
+pub fn sanitize_codex_config_text_for_home(
+    input: &str,
+    codex_home: Option<&Path>,
+) -> (String, bool) {
     let mut output = String::with_capacity(input.len());
     let mut changed = false;
-    let mut skip_reserved_marketplace = false;
+    let mut in_reserved_marketplace = false;
     let mut in_windows_section = false;
 
     for raw_line in input.split_inclusive('\n') {
@@ -24,15 +33,29 @@ pub fn sanitize_codex_config_text(input: &str) -> (String, bool) {
         let trimmed = body.trim();
 
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            skip_reserved_marketplace = trimmed == "[marketplaces.openai-bundled]";
+            in_reserved_marketplace = trimmed == "[marketplaces.openai-bundled]";
             in_windows_section = trimmed == "[windows]";
-            if skip_reserved_marketplace {
+        }
+
+        if in_reserved_marketplace
+            && trimmed.starts_with("source =")
+            && let Some(home) = codex_home
+        {
+            let normalized = home
+                .join(".tmp")
+                .join("bundled-marketplaces")
+                .join("openai-bundled")
+                .to_string_lossy()
+                .replace('\\', "\\\\");
+            let replacement = format!("source = \"{normalized}\"");
+            let indent_len = body.len() - body.trim_start().len();
+            if body[indent_len..].trim() != replacement {
+                output.push_str(&body[..indent_len]);
+                output.push_str(&replacement);
+                output.push_str(ending);
                 changed = true;
                 continue;
             }
-        } else if skip_reserved_marketplace {
-            changed = true;
-            continue;
         }
 
         if in_windows_section
@@ -83,7 +106,7 @@ pub fn sanitize_codex_config() -> Result<bool, ContractError> {
             format!("config.toml is not UTF-8: {error}"),
         )
     })?;
-    let (sanitized, changed) = sanitize_codex_config_text(input);
+    let (sanitized, changed) = sanitize_codex_config_text_for_home(input, Some(&home));
     if !changed {
         return Ok(false);
     }
