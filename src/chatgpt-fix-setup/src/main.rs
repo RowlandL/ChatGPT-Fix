@@ -344,10 +344,10 @@ struct ManifestEntry {
 /// Total bytes under `root` (quick pre-scan for progress reporting).
 fn dir_total_bytes(root: &Path) -> u64 {
     fn walk(dir: &Path, acc: &mut u64) {
-        if let Ok(entries) = fs::read_dir(dir) {
+        if let Ok(entries) = fs::read_dir(chatgpt_fix_core::long_path(dir)) {
             for entry in entries.flatten() {
-                let p = entry.path();
-                if let Ok(md) = fs::symlink_metadata(&p) {
+                let p = dir.join(entry.file_name());
+                if let Ok(md) = fs::symlink_metadata(chatgpt_fix_core::long_path(&p)) {
                     if md.is_dir() {
                         walk(&p, acc);
                     } else {
@@ -374,31 +374,54 @@ fn copy_dir_manifest(
     fs::create_dir_all(dst).ok()?;
     let mut out = Vec::new();
     let mut done_bytes = 0u64;
-    copy_dir_manifest_inner(src, dst, &mut done_bytes, total_bytes, progress, &mut out)?;
+    copy_dir_manifest_inner(src, src, dst, &mut done_bytes, total_bytes, progress, &mut out)?;
     Some(out)
 }
 
 fn copy_dir_manifest_inner(
     src: &Path,
+    root_src: &Path,
     dst: &Path,
     done_bytes: &mut u64,
     total_bytes: u64,
     progress: &dyn Fn(u64, u64),
     out: &mut Vec<ManifestEntry>,
 ) -> Option<()> {
-    let entries = fs::read_dir(src).ok()?;
+    // Long-path aware: read_dir must see the `\\?\` form for deep trees
+    // (>260 chars), but paths are rebuilt from the non-prefixed `src` so the
+    // manifest `strip_prefix` below keeps working.
+    let entries = fs::read_dir(chatgpt_fix_core::long_path(src)).ok()?;
     for entry in entries.flatten() {
-        let from = entry.path();
+        let from = src.join(entry.file_name());
         let to = dst.join(entry.file_name());
-        let md = fs::symlink_metadata(&from).ok()?;
+        let md = fs::symlink_metadata(chatgpt_fix_core::long_path(&from)).ok()?;
         if md.is_dir() {
-            copy_dir_manifest_inner(&from, &to, done_bytes, total_bytes, progress, out)?;
+            // Regression fix: the 1.0.1+ refactor dropped this mkdir, so any
+            // package with subdirectories failed staging at the first subdir.
+            fs::create_dir_all(chatgpt_fix_core::long_path(&to)).ok()?;
+            copy_dir_manifest_inner(
+                &from,
+                root_src,
+                &to,
+                done_bytes,
+                total_bytes,
+                progress,
+                out,
+            )?;
         } else {
-            let bytes = fs::copy(&from, &to).ok()?;
-            let data = fs::read(&from).ok()?;
+            let bytes = fs::copy(
+                &chatgpt_fix_core::long_path(&from),
+                &chatgpt_fix_core::long_path(&to),
+            )
+            .ok()?;
+            let data = fs::read(chatgpt_fix_core::long_path(&from)).ok()?;
             let sha = chatgpt_fix_core::sha256_bytes(&data).to_string();
+            // Relative path must be anchored at the TOP-level source root so
+            // every entry is unique (the 1.0.1+ refactor anchored it at the
+            // current recursion level, flattening subdirectory entries into
+            // colliding top-level names once recursion actually ran).
             let rel = from
-                .strip_prefix(src)
+                .strip_prefix(root_src)
                 .ok()?
                 .to_string_lossy()
                 .replace('\\', "/");

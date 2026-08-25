@@ -198,7 +198,7 @@ fn copy_file(
     let source = source_root.join(relative);
     let target = staging_root.join(relative);
     if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
+        fs::create_dir_all(crate::path::long_path(parent)).map_err(|error| {
             contract_error(
                 "staging_mkdir",
                 "staging_root",
@@ -207,7 +207,11 @@ fn copy_file(
         })?;
     }
     // Reject target escape by construction: relative is SafeRelativePath-safe.
-    let copied = fs::copy(&source, &target).map_err(|error| {
+    let copied = fs::copy(
+        &crate::path::long_path(&source),
+        &crate::path::long_path(&target),
+    )
+    .map_err(|error| {
         contract_error(
             "staging_copy",
             "staging_root",

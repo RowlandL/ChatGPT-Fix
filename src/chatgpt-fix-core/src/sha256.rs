@@ -27,7 +27,7 @@ pub fn sha256_bytes(bytes: &[u8]) -> Sha256Digest {
 }
 
 pub(crate) fn sha256_file(path: &Path) -> io::Result<Sha256Digest> {
-    let mut file = File::open(path)?;
+    let mut file = File::open(crate::path::long_path(path))?;
     let mut state = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
 

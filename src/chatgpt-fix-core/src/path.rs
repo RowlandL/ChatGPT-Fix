@@ -1,7 +1,42 @@
 use std::fmt;
+use std::ffi::OsString;
+use std::path::Path;
 use std::str::FromStr;
 
 use crate::ContractError;
+
+/// Windows long-path helper: absolute paths longer than MAX_PATH (260 chars)
+/// fail in `std::fs` because Rust does not auto-prefix them. This converts an
+/// absolute path to its `\\?\`-prefixed form so every std fs call works for
+/// deep trees (observed: OpenAI.Codex 26.814 ships a 371-char path under
+/// `resources/cua_node/.../pnpm-store/...`). Non-Windows and relative paths
+/// pass through unchanged; already-prefixed and device paths are left alone.
+pub fn long_path(path: &Path) -> OsString {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        let text = path.to_string_lossy();
+        if !path.is_absolute() || text.starts_with(r"\\?\") || text.starts_with(r"\\.\") {
+            return path.as_os_str().to_os_string();
+        }
+        let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+        let mut out = Vec::with_capacity(wide.len() + 8);
+        if text.starts_with(r"\\") {
+            // UNC: \\server\share -> \\?\UNC\server\share
+            out.extend_from_slice(&[b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16]);
+            out.extend_from_slice(&[b'U' as u16, b'N' as u16, b'C' as u16, b'\\' as u16]);
+            out.extend_from_slice(&wide[2..]);
+        } else {
+            out.extend_from_slice(&[b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16]);
+            out.extend_from_slice(&wide);
+        }
+        OsString::from_wide(&out)
+    }
+    #[cfg(not(windows))]
+    {
+        path.as_os_str().to_os_string()
+    }
+}
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SafeRelativePath(String);

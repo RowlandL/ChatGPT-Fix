@@ -33,7 +33,7 @@ pub use ntc::{
     NTC_HEALTH_SCHEMA, NtcHealthV1, json_parse_ntc_receipt, ntc_health_check, write_ntc_health,
 };
 pub use ownership::observe_process_tree;
-pub use path::{SafeRelativePath, Sha256Digest};
+pub use path::{long_path, SafeRelativePath, Sha256Digest};
 pub use probe::{
     A2_P2_ENV, inspect_live_json, inspect_probe_json, plan_from_probe, plan_live_json,
     plan_probe_json,
