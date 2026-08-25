@@ -4,6 +4,7 @@ members = [
     "src/chatgpt-fix-packer",
     "src/chatgpt-fix-manager",
     "src/chatgpt-fix-launcher",
+    "src/chatgpt-fix-locale",
     "src/chatgpt-fix-setup",
 ]
 resolver = "3"

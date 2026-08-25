@@ -206,6 +206,60 @@ fn launch_from_pointer_rejects_unverified_legacy_schema() {
 }
 
 #[test]
+fn stable_profile_migration_moves_once_and_is_reused() {
+    // Regression: the user-data dir used to live under the baseline, so a
+    // baseline swap reset appearance/desktop settings. It must migrate once
+    // to <program-root>/profile/user-data and be reused by later baselines.
+    // Tested directly against `resolve_user_data_dir` so it is deterministic
+    // regardless of whether a real ChatGPT.exe happens to be running.
+    use chatgpt_fix_core::resolve_user_data_dir;
+
+    let root = program_root("profile-migrate");
+    let baseline = root.join("baseline");
+    let legacy = baseline.join("profile").join("user-data");
+    fs::create_dir_all(&legacy).expect("create legacy profile");
+    fs::write(legacy.join("appearance.json"), r#"{"theme":"dark"}"#).expect("write profile");
+
+    let stable = resolve_user_data_dir(&root, &baseline);
+    assert_eq!(stable, root.join("profile").join("user-data"));
+    assert!(
+        stable.join("appearance.json").exists(),
+        "profile migrated to stable location"
+    );
+    assert_eq!(
+        fs::read_to_string(stable.join("appearance.json")).expect("read stable profile"),
+        r#"{"theme":"dark"}"#
+    );
+    assert!(
+        !baseline.join("profile").join("user-data").exists(),
+        "legacy baseline profile moved away"
+    );
+    assert!(
+        root.join("profile").join("user-data-migrated.marker").exists(),
+        "migration marker written"
+    );
+
+    // A later resolve from a DIFFERENT baseline must reuse the stable
+    // profile and must not migrate (or overwrite) again.
+    let baseline2 = root.join("baseline2");
+    let legacy2 = baseline2.join("profile").join("user-data");
+    fs::create_dir_all(&legacy2).expect("create legacy2");
+    fs::write(legacy2.join("appearance.json"), r#"{"theme":"light"}"#).expect("write profile2");
+
+    let stable2 = resolve_user_data_dir(&root, &baseline2);
+    assert_eq!(stable2, stable);
+    assert_eq!(
+        fs::read_to_string(stable.join("appearance.json")).expect("read stable profile"),
+        r#"{"theme":"dark"}"#,
+        "the second baseline's fresh profile must not replace the stable one"
+    );
+    assert!(
+        legacy2.join("appearance.json").exists(),
+        "second baseline's legacy profile left in place (no re-migration)"
+    );
+}
+
+#[test]
 fn rollback_restores_pointer_and_marks_rolled_back() {
     let root = program_root("rollback");
     let generation = activate(&baseline_fixture(), &root, fixture_shortcut(), false)

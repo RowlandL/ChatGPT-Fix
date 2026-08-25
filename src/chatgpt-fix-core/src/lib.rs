@@ -25,7 +25,8 @@ pub use doctor::{DOCTOR_SCHEMA, DoctorFinding, DoctorLevel, DoctorStatus, Doctor
 pub use error::ContractError;
 pub use fixture::{FIXTURE_SCHEMA, FixtureError, plan_fixture};
 pub use generation::{
-    activate, launch_from_pointer, parse_shortcut_json, read_pointer, rollback, write_shortcut_json,
+    activate, launch_from_pointer, parse_shortcut_json, read_pointer, resolve_user_data_dir,
+    rollback, write_shortcut_json,
 };
 pub use maintenance::{generate_maintenance_plan, register_ntc_manifest};
 pub use ntc::{
@@ -38,7 +39,8 @@ pub use probe::{
     plan_probe_json,
 };
 pub use runtime_config::{
-    sanitize_codex_config, sanitize_codex_config_text, sanitize_codex_config_text_for_home,
+    preserve_desktop_section, preserve_desktop_section_at, sanitize_codex_config,
+    sanitize_codex_config_text, sanitize_codex_config_text_for_home,
 };
 pub use schema::{
     BASELINE_SCHEMA, BaselineV2, BreakawayEvent, CONFIG_PROPOSAL_SCHEMA, ConfigApplyMode,

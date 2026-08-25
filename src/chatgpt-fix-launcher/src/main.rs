@@ -83,6 +83,12 @@ fn run_live_launch(program_root: &Path) -> ExitCode {
         // from starting; the warning remains available to a console caller.
         eprintln!("config_sanitize_warning: {error}");
     }
+    // Preserve the user's [desktop] settings (appearance/locale) across
+    // config-manager rewrites that drop unmanaged sections. Best-effort:
+    // a failure here must never block the launch.
+    if let Err(error) = chatgpt_fix_core::preserve_desktop_section(&program_root.join("state")) {
+        eprintln!("desktop_config_preserve_warning: {error}");
+    }
     let (launch, spawned_pid) = match chatgpt_fix_core::launch_from_pointer(program_root) {
         Ok(pair) => pair,
         Err(error) => {

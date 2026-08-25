@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::Write as IoWrite;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::json::write_string;
 use crate::{
@@ -493,6 +493,49 @@ pub fn write_shortcut_json(
     Ok(())
 }
 
+/// Resolve the stable user-data directory for the isolated app:
+/// `<program-root>/profile/user-data`.
+///
+/// The profile must survive baseline swaps: keeping it under the baseline
+/// meant every new baseline started with a fresh profile, silently losing
+/// the user's appearance settings, desktop-only preferences and session
+/// state. The stable location is shared by every baseline and every
+/// launcher entry point.
+///
+/// One-time migration: on the first launch after this change, the active
+/// baseline's existing `profile/user-data` is moved (same-volume rename,
+/// instant) into the stable location, preserving the user's current state.
+/// A marker file prevents repeated attempts. The migration only runs when
+/// the app is actually about to be spawned (never while an instance is
+/// running, which would pull the profile out from under it).
+///
+/// Public so the migration behavior can be unit-tested deterministically
+/// (the launch path itself skips migration while an instance is running).
+pub fn resolve_user_data_dir(program_root: &Path, baseline: &Path) -> PathBuf {
+    let stable = program_root.join("profile").join("user-data");
+    let marker = program_root.join("profile").join("user-data-migrated.marker");
+    if !marker.exists() {
+        // `fs::rename` requires the destination parent to exist.
+        if let Some(parent) = stable.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let legacy = baseline.join("profile").join("user-data");
+        if legacy.is_dir() && !stable.exists() {
+            if let Err(error) = fs::rename(&legacy, &stable) {
+                // Same-volume rename is expected to succeed; a failure here
+                // (e.g. antivirus lock) must not block launch — fall back to
+                // a fresh stable profile and keep the legacy copy intact.
+                eprintln!("profile_migration_warning: cannot move legacy profile: {error}");
+            }
+        }
+        if stable.exists() {
+            // Marker prevents re-running the migration on every launch.
+            let _ = fs::write(&marker, b"chatgpt-fix-profile-migrated-v1\n");
+        }
+    }
+    stable
+}
+
 /// Launch the active ChatGPT baseline from `<program-root>/current.json`.
 ///
 /// Reads the `chatgpt_fix.pointer.v1` pointer, resolves the baseline root,
@@ -573,45 +616,33 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<(LaunchV1, Option<u32>
     // and waste memory). Reuse the running instance instead AND bring its
     // window to the foreground so the user sees feedback (instead of the
     // launcher silently doing nothing).
+    //
+    // Windowless-state recovery: after the user closes the main window the
+    // process tree can stay alive in the background (window-all-closed
+    // keeps the app resident). Reusing that instance has no visible effect
+    // and makes the shortcut appear completely dead. When no visible
+    // ChatGPT window exists, the stale instance is closed and a fresh one
+    // is spawned below.
     if chatgpt_process_running() {
-        // Bring the running app window to the foreground so the user sees
-        // feedback. The AUMID launch (shell:AppsFolder) only works for
-        // MSIX-registered apps; a user-owned baseline copy is not registered,
-        // so we enumerate top-level windows instead. Best-effort.
+        let reuse_launch = build_reuse_launch(baseline, &executable)?;
         #[cfg(windows)]
         {
-            let _ = crate::win32::activate_chatgpt_window();
+            // Bring the running app window to the foreground so the user
+            // sees feedback. The AUMID launch (shell:AppsFolder) only works
+            // for MSIX-registered apps; a user-owned baseline copy is not
+            // registered, so we enumerate top-level windows instead.
+            if crate::win32::activate_chatgpt_window() {
+                return Ok((reuse_launch, None));
+            }
+            // No visible window found: close the stale windowless instance
+            // (graceful first, force only after a grace period) and fall
+            // through to the spawn path below.
+            close_stale_chatgpt_instance();
         }
-        let launch = LaunchV1 {
-            launch_id: format!(
-                "live-{}",
-                crate::utc_now_rfc3339()
-                    .replace([':', '-'], "")
-                    .replace('T', "-")
-            ),
-            generation: 1,
-            baseline_id: SafeRelativePath::parse(
-                baseline
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .as_ref(),
-            )
-            .unwrap_or_else(|_| SafeRelativePath::parse("baseline").expect("static safe path")),
-            executable: SafeRelativePath::parse(
-                executable
-                    .strip_prefix(baseline)
-                    .unwrap_or(&executable)
-                    .to_string_lossy()
-                    .replace('\\', "/")
-                    .as_str(),
-            )
-            .map_err(|error| contract_error("invalid_value", "executable", format!("{error}")))?,
-            would_start: true,
-            reason: None,
-        };
-        launch.validate()?;
-        return Ok((launch, None));
+        #[cfg(not(windows))]
+        {
+            return Ok((reuse_launch, None));
+        }
     }
 
     // Launch detached: the launcher does not wait for the app to exit.
@@ -619,11 +650,12 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<(LaunchV1, Option<u32>
     // independently (on Windows, dropping without wait leaves the child
     // alive; never call kill() here).
     //
-    // Use a dedicated user-data dir under the baseline (profile/user-data,
-    // the original Codex-NTFS-Fix design). Without it the app loads the
-    // default profile (%APPDATA%\Codex\web\Codex, several hundred MB) on
-    // every start, which is measurably slower than a clean profile.
-    let profile_dir = baseline.join("profile").join("user-data");
+    // User data lives in a stable profile under the program root
+    // (`<program-root>/profile/user-data`), NOT under the baseline: a
+    // baseline swap must never reset the user's appearance/desktop
+    // settings or session state. One-time migration from the legacy
+    // baseline profile is handled by `resolve_user_data_dir`.
+    let profile_dir = resolve_user_data_dir(program_root, baseline);
     let _ = fs::create_dir_all(&profile_dir);
     let mut command = Command::new(&executable);
     command
@@ -676,13 +708,13 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<(LaunchV1, Option<u32>
     // Detach: the Child is dropped without wait/kill; the app keeps running.
     drop(child);
 
-    // Relative executable path for the launch receipt (safe, portable).
-    let rel = executable
-        .strip_prefix(baseline)
-        .unwrap_or(&executable)
-        .to_string_lossy()
-        .replace('\\', "/");
+    let launch = build_reuse_launch(baseline, &executable)?;
+    Ok((launch, Some(spawned_pid)))
+}
 
+/// Build the single-instance reuse launch receipt for an already-running
+/// ChatGPT instance.
+fn build_reuse_launch(baseline: &Path, executable: &Path) -> Result<LaunchV1, ContractError> {
     let launch = LaunchV1 {
         launch_id: format!(
             "live-{}",
@@ -699,13 +731,62 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<(LaunchV1, Option<u32>
                 .as_ref(),
         )
         .unwrap_or_else(|_| SafeRelativePath::parse("baseline").expect("static safe path")),
-        executable: SafeRelativePath::parse(&rel)
-            .map_err(|error| contract_error("invalid_value", "executable", format!("{error}")))?,
+        executable: SafeRelativePath::parse(
+            executable
+                .strip_prefix(baseline)
+                .unwrap_or(&executable)
+                .to_string_lossy()
+                .replace('\\', "/")
+                .as_str(),
+        )
+        .map_err(|error| contract_error("invalid_value", "executable", format!("{error}")))?,
         would_start: true,
         reason: None,
     };
     launch.validate()?;
-    Ok((launch, Some(spawned_pid)))
+    Ok(launch)
+}
+
+/// Best-effort close of a stale windowless ChatGPT instance so the launch
+/// path can spawn a fresh one. Graceful (`taskkill /T` sends WM_CLOSE to the
+/// tree) first; force-kill only if the processes stay alive after a short
+/// grace period (which also lets the Chromium profile lock be released).
+fn close_stale_chatgpt_instance() {
+    use std::process::Command;
+    let _ = console_hidden(Command::new("taskkill"))
+        .args(["/IM", "ChatGPT.exe", "/T"])
+        .output();
+    wait_for_chatgpt_exit(5);
+    if chatgpt_process_running() {
+        let _ = console_hidden(Command::new("taskkill"))
+            .args(["/IM", "ChatGPT.exe", "/T", "/F"])
+            .output();
+        wait_for_chatgpt_exit(3);
+    }
+}
+
+/// Configure a child console process so it never flashes a console window.
+///
+/// The launcher is a `windows_subsystem = "windows"` binary; spawning
+/// `tasklist`/`taskkill` from it would otherwise pop a new console window
+/// per invocation (very visible during the close/poll loop).
+fn console_hidden(mut command: std::process::Command) -> std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW
+        command.creation_flags(0x0800_0000);
+    }
+    command
+}
+
+/// Poll `chatgpt_process_running` for up to `seconds`, returning early as
+/// soon as the processes are gone.
+fn wait_for_chatgpt_exit(seconds: u64) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    while chatgpt_process_running() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
 }
 
 /// Returns true when at least one ChatGPT.exe process is already running
@@ -713,7 +794,7 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<(LaunchV1, Option<u32>
 /// the locale of the output never matters.
 fn chatgpt_process_running() -> bool {
     use std::process::Command;
-    let output = match Command::new("tasklist")
+    let output = match console_hidden(Command::new("tasklist"))
         .args(["/FI", "IMAGENAME eq ChatGPT.exe", "/FO", "CSV", "/NH"])
         .output()
     {
