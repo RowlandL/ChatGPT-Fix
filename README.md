@@ -24,6 +24,12 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 4. 双击开始菜单的 **ChatGPT-Fix-Launcher** 或 **ChatGPT** 启动
 5. （可选）界面为英文时，退出应用后运行 `ChatGPT-Fix-Locale.exe fix` 固化中文界面；`ChatGPT-Fix-Locale.exe status` 查看注入状态
 
+## 已知限制
+
+- **官方插件商店安装需要 ChatGPT 登录**：桌面应用内置的官方远程插件目录（`Codex official` / `openai-curated-remote`）在读取详情与安装时由应用侧强制要求 ChatGPT 账号认证（`chatgpt authentication required for remote plugin catalog`），API-key 认证模式（`PROXY_MANAGED`）不被支持。这是应用自身的设计限制，本项目不绕过账号体系。
+- **本地市场不受影响**：以 `source_type = "local"` 注册的本地插件市场（如 `marketplaces/<name>` 下的清单与插件副本）完整走本地安装路径，无需账号；此类配置建议写入 cc-switch 接管的通用配置，避免应用侧配置重写时丢失。
+- 平台上的「完成 Windows 设置」（Windows Sandbox 沙盒）横幅与权限提示取决于运行环境（缺 Hyper-V/嵌套虚拟化的虚拟机无法完成 elevated 沙盒准备）；Launcher 会将旧版 `windows.sandbox = "low"` 归一为 `elevated` 以对齐最新应用契约，沙盒就绪状态由应用侧判定。
+
 ## v1.0.3 发布契约
 
 - 保留 v1.0.2 对 GitHub issue #2（全新安装缺少自有 injector）与 issue #3（缺少 `ChatGPT` 开始菜单入口）的修复。
