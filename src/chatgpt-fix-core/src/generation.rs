@@ -655,7 +655,10 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<(LaunchV1, Option<u32>
     // baseline swap must never reset the user's appearance/desktop
     // settings or session state. One-time migration from the legacy
     // baseline profile is handled by `resolve_user_data_dir`.
-    let profile_dir = resolve_user_data_dir(program_root, baseline);
+    // v1.0.4 (plan 1): authority profile path = baseline-local profile, so each
+    // baseline owns its login/desktop state and profiles never split across
+    // baselines or program-root migrations.
+    let profile_dir = baseline.join("profile").join("user-data");
     let _ = fs::create_dir_all(&profile_dir);
     let mut command = Command::new(&executable);
     command
