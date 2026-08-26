@@ -27,14 +27,16 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 ## 已知限制
 
 - **官方插件商店安装需要 ChatGPT 登录**：桌面应用内置的官方远程插件目录（`Codex official` / `openai-curated-remote`）在读取详情与安装时由应用侧强制要求 ChatGPT 账号认证（`chatgpt authentication required for remote plugin catalog`），API-key 认证模式（`PROXY_MANAGED`）不被支持。这是应用自身的设计限制，本项目不绕过账号体系。
+- **NTC（Token 用量插件）当前存在 bug，v1.0.4 暂时不集成/默认禁用**：该用户脚本在切换会话与流式输出时触发 UI 卡顿。实测定位是 `syncHubVisibility` 每次执行都重写 HUD 的 `style.display` 等 DOM，会话切换 DOM 重建时反复触发 26.814+/26.818 桌面端自带的 ResizeObserver 布局循环 → 渲染器主线程饱和。已通过 A/B（关闭 NTC 后切换会话不卡）确认根因，但该插件自身修复尚未完成，故 **v1.0.4 发布不含可用的 NTC**；注入脚本与修复补丁保留在仓库，待上游/后续修复后重新启用。
 - **本地市场不受影响**：以 `source_type = "local"` 注册的本地插件市场（如 `marketplaces/<name>` 下的清单与插件副本）完整走本地安装路径，无需账号；此类配置建议写入 cc-switch 接管的通用配置，避免应用侧配置重写时丢失。
 - 平台上的「完成 Windows 设置」（Windows Sandbox 沙盒）横幅与权限提示取决于运行环境（缺 Hyper-V/嵌套虚拟化的虚拟机无法完成 elevated 沙盒准备）；Launcher 会将旧版 `windows.sandbox = "low"` 归一为 `elevated` 以对齐最新应用契约，沙盒就绪状态由应用侧判定。
 
 ## v1.0.4 发布契约
 
-- 在 v1.0.3 能力基础上新增 NTC HUD **可见性状态缓存**：syncHubVisibility 在 HUD 可见性未变化时跳过全部 DOM 写（dataset/aria-hidden/display），切断"改 display 与 26.814+/26.818 桌面端 ResizeObserver 布局循环"的自激回路，修复长对话/频繁切换会话时的 UI 卡顿。
-- inject-native-token-cost.js 打包第 4 步改用 createPackageWithOptions(work, outAsar, {})（无 unpack glob）：native 模块（better-sqlite3/node-pty/serialport）留在 asar body，避免宽泛 unpack glob 同时解出 tslib 等纯 JS 依赖导致加载失败。unpacked 目录按固定名 app.asar.unpacked 复制（而非按输入 asar 名命名），保证 Electron 运行时正确解析原生模块。
-- 保留 v1.0.3 的发布契约（快捷方式、install 支持 scripts/inject-native-token-cost.js、hash/SBOM/receipt 仅就实际构建产物生成）。
+- **定版说明**：v1.0.4 以 26.818 基线 + 基线内 profile（baseline-profile-user-data，整改点 1）+ locale 中文为最终定版。**NTC（Token 用量插件）因当前存在切换会话/流式输出卡顿 bug，v1.0.4 默认不集成、不启用**（见「已知限制」）。
+- **整改点 1（profile 权威路径）**：launcher 的 --user-data-dir 统一为 baseline-profile-user-data，回归基线内隔离（generation.rs）。
+- **NTC 修复与打包改进（保留但默认不启用）**：inject-native-token-cost.js 新增 HUD 可见性状态缓存（syncHubVisibility 在可见性未变化时跳过全部 DOM 写，切断与 26.814+/26.818 桌面端 ResizeObserver 布局循环的自激回路）；打包第 4 步改用 createPackageWithOptions(work, outAsar, {})（无 unpack glob，native 留在 asar body，避免宽泛 glob 解出 tslib 等纯 JS 依赖导致加载失败）；unpacked 目录按固定名 app.asar.unpacked 复制，保证原生模块解析正确；注入幂等（重复 ntc-reapply 不叠加 loader）。这些改动为后续重新启用 NTC 预留，当前 v1.0.4 不启用。
+- **保留 v1.0.3 发布契约**（快捷方式、install 支持 scripts/inject-native-token-cost.js、hash/SBOM/receipt 仅就实际构建产物生成）。
 
 ## v1.0.3 发布契约
 
