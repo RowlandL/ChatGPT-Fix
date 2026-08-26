@@ -199,7 +199,25 @@ function main() {
       "",
     ].join("\n");
     const original = fs.readFileSync(entryPath, "utf8");
-    fs.writeFileSync(entryPath, loader + original);
+    // Idempotent re-injection: if a previous run already prepended our NTC
+    // loader, strip it (from the leading marker through its closing
+    // "} catch (e) {...}" line) so we never stack two loaders / two
+    // ntcSource copies on top of each other. ntc-reapply may re-run on the
+    // same baseline after updating the userscript or PATCHES.
+    const LOADER_MARK = "// NTC-NATIVE-20260801 loader";
+    if (original.includes(LOADER_MARK)) {
+      const markStart = original.indexOf(LOADER_MARK);
+      const firstLineEnd = original.indexOf("\n", markStart);
+      const loaderEnd = original.indexOf(
+        "console.error('[ntc] loader failed', e); }",
+        markStart
+      );
+      const cutTo = loaderEnd >= 0 ? loaderEnd + "console.error('[ntc] loader failed', e); }".length : firstLineEnd;
+      const stripped = original.slice(0, markStart) + original.slice(cutTo);
+      fs.writeFileSync(entryPath, loader + stripped);
+    } else {
+      fs.writeFileSync(entryPath, loader + original);
+    }
 
     // 4. Repack (async). The temp dir must stay alive until the promise
     //    settles; cleanup happens in the promise handlers, NOT in a finally

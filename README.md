@@ -1,4 +1,4 @@
-# ChatGPT-Fix v1.0.3
+# ChatGPT-Fix v1.0.4
 
 Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，修复 NTFS 内核非分页池泄漏，集成本地 Token 用量统计。
 
@@ -11,7 +11,7 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 | **NTFS 泄漏修复** | 将官方包完整复制到用户目录 baseline 运行，规避 WindowsApps 沙箱环境触发的内核非分页池泄漏（实测：修复前 +440MB/min，修复后长时间运行稳定） |
 | **一键安装** | 将完整 payload 放在 Setup 同目录后运行 `ChatGPT-Fix-Setup.exe install`：复制 baseline、写入指针、创建两个开始菜单快捷方式、记录安装日志 |
 | **隔离启动** | Launcher 校验 verified baseline 后从用户目录启动；独立 profile（语言/登录/设置数据保留）；Job Object 归属 + 驻留生命周期 |
-| **Token 用量统计** | 输入框上方实时 HUD：本轮/会话 Token、缓存命中、费用、今日累计；本地统计 + 可选 CC Switch 同步 |
+| **Token 用量统计** | 输入框上方实时 HUD：本轮/会话 Token、缓存命中、费用、今日累计；本地统计 + 可选 CC Switch 同步；HUD 可见性节流（rAF 批处理 + 500 ms）+ 状态缓存，切换会话不再触发桌面端 ResizeObserver 布局循环导致卡顿 |
 | **单实例 + 窗口激活** | 重复双击复用实例并激活窗口；无窗口残留实例自动清理并重新拉起，快捷方式不再"点了没反应" |
 | **中文界面持久化** | `ChatGPT-Fix-Locale.exe fix` 将渲染器内 `enable_i18n` 默认值改为开启：中文界面不再依赖从 chatgpt.com 拉取 Statsig 开关，断网/网络受限时保持中文 |
 | **安全设计** | 不修改 `WindowsApps`、不随发布分发官方包内容、全部可回滚（注入前自动备份） |
@@ -29,6 +29,12 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 - **官方插件商店安装需要 ChatGPT 登录**：桌面应用内置的官方远程插件目录（`Codex official` / `openai-curated-remote`）在读取详情与安装时由应用侧强制要求 ChatGPT 账号认证（`chatgpt authentication required for remote plugin catalog`），API-key 认证模式（`PROXY_MANAGED`）不被支持。这是应用自身的设计限制，本项目不绕过账号体系。
 - **本地市场不受影响**：以 `source_type = "local"` 注册的本地插件市场（如 `marketplaces/<name>` 下的清单与插件副本）完整走本地安装路径，无需账号；此类配置建议写入 cc-switch 接管的通用配置，避免应用侧配置重写时丢失。
 - 平台上的「完成 Windows 设置」（Windows Sandbox 沙盒）横幅与权限提示取决于运行环境（缺 Hyper-V/嵌套虚拟化的虚拟机无法完成 elevated 沙盒准备）；Launcher 会将旧版 `windows.sandbox = "low"` 归一为 `elevated` 以对齐最新应用契约，沙盒就绪状态由应用侧判定。
+
+## v1.0.4 发布契约
+
+- 在 v1.0.3 能力基础上新增 NTC HUD **可见性状态缓存**：syncHubVisibility 在 HUD 可见性未变化时跳过全部 DOM 写（dataset/aria-hidden/display），切断"改 display 与 26.814+/26.818 桌面端 ResizeObserver 布局循环"的自激回路，修复长对话/频繁切换会话时的 UI 卡顿。
+- inject-native-token-cost.js 打包第 4 步改用 createPackageWithOptions(work, outAsar, {})（无 unpack glob）：native 模块（better-sqlite3/node-pty/serialport）留在 asar body，避免宽泛 unpack glob 同时解出 tslib 等纯 JS 依赖导致加载失败。unpacked 目录按固定名 app.asar.unpacked 复制（而非按输入 asar 名命名），保证 Electron 运行时正确解析原生模块。
+- 保留 v1.0.3 的发布契约（快捷方式、install 支持 scripts/inject-native-token-cost.js、hash/SBOM/receipt 仅就实际构建产物生成）。
 
 ## v1.0.3 发布契约
 
