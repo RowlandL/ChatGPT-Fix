@@ -26,6 +26,7 @@ $runtimeAssets = @(
     'ChatGPT-Fix-Manager.exe',
     'ChatGPT-Fix-Packer.exe',
     'ChatGPT-Fix-Setup.exe',
+    'ChatGPT-Fix-Locale.exe',
     'inject-native-token-cost.js',
     "ChatGPT-Fix-v$ExpectedVersion-win-x64.zip"
 )
@@ -124,6 +125,7 @@ try {
         'ChatGPT-Fix-Manager.exe',
         'ChatGPT-Fix-Packer.exe',
         'ChatGPT-Fix-Setup.exe',
+        'ChatGPT-Fix-Locale.exe',
         'scripts\inject-native-token-cost.js'
     )
     $actualZipFiles = @(Get-ChildItem -LiteralPath $extractRoot -Recurse -File | ForEach-Object {
@@ -132,7 +134,7 @@ try {
     if (($actualZipFiles -join "`n") -ne (($expectedZipFiles | Sort-Object) -join "`n")) {
         throw 'Zip payload file set is not exact'
     }
-    foreach ($name in $runtimeAssets[0..3]) {
+    foreach ($name in $runtimeAssets[0..4]) {
         $zipHash = (Get-FileHash -LiteralPath (Join-Path $extractRoot $name) -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($zipHash -ne $hashes[$name]) { throw "Zip executable hash mismatch: $name" }
     }
@@ -149,5 +151,5 @@ finally {
     source_commit = $ExpectedSourceCommit.ToLowerInvariant()
     verified = $true
     hashed_assets = $hashedAssets.Count
-    zip_payload_files = 5
+    zip_payload_files = 6
 } | ConvertTo-Json -Depth 3

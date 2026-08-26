@@ -41,6 +41,7 @@ fn write_fake_artifacts(dir: &Path) {
         "ChatGPT-Fix-Manager.exe",
         "ChatGPT-Fix-Packer.exe",
         "ChatGPT-Fix-Setup.exe",
+        "ChatGPT-Fix-Locale.exe",
     ] {
         fs::write(dir.join(name), format!("fake-binary-{name}")).expect("write fake artifact");
     }
@@ -54,7 +55,7 @@ fn prints_exact_version() {
         .expect("run chatgpt-fix-setup");
 
     assert_eq!(output.status.code(), Some(0), "stderr: {:?}", output.stderr);
-    assert_eq!(output.stdout, b"ChatGPT-Fix-Setup 1.0.4\n");
+    assert_eq!(output.stdout, b"ChatGPT-Fix-Setup 1.0.5\n");
     assert!(output.stderr.is_empty(), "stderr: {:?}", output.stderr);
 }
 
@@ -106,6 +107,11 @@ fn install_fails_closed_when_source_missing_artifacts() {
         "stderr: {:?}",
         output.stderr
     );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("ChatGPT-Fix-Locale.exe"),
+        "Locale must be a required installer artifact: {:?}",
+        output.stderr
+    );
 }
 
 #[test]
@@ -142,6 +148,7 @@ fn install_copies_artifacts_and_prints_receipt() {
         "ChatGPT-Fix-Manager.exe",
         "ChatGPT-Fix-Packer.exe",
         "ChatGPT-Fix-Setup.exe",
+        "ChatGPT-Fix-Locale.exe",
     ] {
         assert!(bin.join(name).is_file(), "missing installed {name}");
     }
@@ -234,6 +241,7 @@ fn uninstall_removes_artifacts_keeps_backups() {
         "ChatGPT-Fix-Manager.exe",
         "ChatGPT-Fix-Packer.exe",
         "ChatGPT-Fix-Setup.exe",
+        "ChatGPT-Fix-Locale.exe",
     ] {
         assert!(
             !bin.join(name).exists(),

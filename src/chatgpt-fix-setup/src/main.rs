@@ -37,13 +37,14 @@ const LOG_SUBDIR: &str = "logs";
 const LOG_FILE: &str = "setup.jsonl";
 const LOG_SCHEMA: &str = "chatgpt_fix.setup_log.v1";
 
-/// The four artifacts installed by Setup (per-user, only this project's
+/// The five artifacts installed by Setup (per-user, only this project's
 /// binaries — never the official OpenAI package).
-const ARTIFACTS: [&str; 4] = [
+const ARTIFACTS: [&str; 5] = [
     "ChatGPT-Fix-Launcher.exe",
     "ChatGPT-Fix-Manager.exe",
     "ChatGPT-Fix-Packer.exe",
     "ChatGPT-Fix-Setup.exe",
+    "ChatGPT-Fix-Locale.exe",
 ];
 
 fn install_root() -> Result<PathBuf, String> {

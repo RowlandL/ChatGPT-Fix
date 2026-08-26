@@ -236,7 +236,7 @@ fn stable_profile_migration_moves_once_and_is_reused() {
     );
     assert!(
         root.join("profile")
-            .join("user-data-migrated.marker")
+            .join("user-data-migrated-v2.marker")
             .exists(),
         "migration marker written"
     );
@@ -258,6 +258,62 @@ fn stable_profile_migration_moves_once_and_is_reused() {
     assert!(
         legacy2.join("appearance.json").exists(),
         "second baseline's legacy profile left in place (no re-migration)"
+    );
+}
+
+#[test]
+fn stable_profile_is_created_for_a_new_baseline() {
+    // A fresh baseline has no legacy profile to migrate, but launch preparation
+    // must still create the stable location that survives later baseline swaps.
+    use chatgpt_fix_core::resolve_user_data_dir;
+
+    let root = program_root("profile-create");
+    let baseline = root.join("baseline");
+    fs::create_dir_all(&baseline).expect("create baseline");
+
+    let stable = resolve_user_data_dir(&root, &baseline);
+
+    assert_eq!(stable, root.join("profile").join("user-data"));
+    assert!(
+        stable.is_dir(),
+        "stable user-data directory must be created"
+    );
+}
+
+#[test]
+fn newer_baseline_profile_replaces_stale_stable_profile_with_backup() {
+    // v1.0.4 wrote the active user's state into the baseline. On upgrade, that
+    // newer state must win over an older stable profile, but the older profile
+    // must remain recoverable.
+    use chatgpt_fix_core::resolve_user_data_dir;
+
+    let root = program_root("profile-upgrade");
+    let stable = root.join("profile").join("user-data");
+    fs::create_dir_all(&stable).expect("create stable profile");
+    fs::write(stable.join("appearance.json"), r#"{"theme":"old"}"#).expect("write stable profile");
+    std::thread::sleep(std::time::Duration::from_millis(20));
+
+    let baseline = root.join("baseline");
+    let legacy = baseline.join("profile").join("user-data");
+    fs::create_dir_all(&legacy).expect("create legacy profile");
+    fs::write(legacy.join("appearance.json"), r#"{"theme":"current"}"#)
+        .expect("write legacy profile");
+
+    let resolved = resolve_user_data_dir(&root, &baseline);
+
+    assert_eq!(resolved, stable);
+    assert_eq!(
+        fs::read_to_string(stable.join("appearance.json")).expect("read promoted profile"),
+        r#"{"theme":"current"}"#
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("profile/user-data.pre-v1.0.5/appearance.json"))
+            .expect("read preserved profile"),
+        r#"{"theme":"old"}"#
+    );
+    assert!(
+        root.join("profile/user-data-migrated-v2.marker").is_file(),
+        "v2 migration marker must prevent another profile swap"
     );
 }
 

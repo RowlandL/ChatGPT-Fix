@@ -16,10 +16,10 @@ using Microsoft.Win32;
 
 // Product identity for the published artifact: the PE version resource
 // (file properties) comes from these assembly attributes, so the Setup
-// exe reports 1.0.4 just like VERSION and the registry DisplayVersion.
-[assembly: System.Reflection.AssemblyVersion("1.0.4.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.0.4.0")]
-[assembly: System.Reflection.AssemblyInformationalVersion("1.0.4")]
+// exe reports 1.0.5 just like VERSION and the registry DisplayVersion.
+[assembly: System.Reflection.AssemblyVersion("1.0.5.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.0.5.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.0.5")]
 [assembly: System.Reflection.AssemblyProduct("ChatGPT-Fix")]
 [assembly: System.Reflection.AssemblyTitle("ChatGPT-Fix Setup")]
 
@@ -367,7 +367,7 @@ namespace ChatGPTFixSetup
 
         public SetupForm()
         {
-            Text = "ChatGPT-Fix 安装程序 v1.0.4";
+            Text = "ChatGPT-Fix 安装程序 v1.0.5";
             ClientSize = new Size(500, 250);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -523,14 +523,9 @@ namespace ChatGPTFixSetup
                 SetStep(2);
                 _progress.Value = 100;
 
-                // 6. Token statistics are an optional post-install feature.
-                // The base installation is already committed; failure here is
-                // a retryable warning and must never roll it back.
-                if (!EnsureNtc(installRoot, baseline))
-                {
-                    _ntcWarning = true;
-                    SetStatus("基础安装已完成，但 Token 统计未启用；请从外部 v1.0.4 安装包重新安装后重试。");
-                }
+                // 6. v1.0.5 keeps NTC injection disabled. The baseline copy
+                // above reconciles stale NTC state, but a fresh injection can
+                // reintroduce the known session-switch rendering stall.
                 SetStatus("正在启动 ChatGPT…");
                 string launcher = Path.Combine(binDir2, "ChatGPT-Fix-Launcher.exe");
                 try
@@ -604,7 +599,7 @@ namespace ChatGPTFixSetup
                 string launcher = Path.Combine(installRoot, "bin", "ChatGPT-Fix-Launcher.exe");
                 string setup = Path.Combine(installRoot, "bin", "ChatGPT-Fix-Setup.exe");
                 if (!File.Exists(launcher) || !File.Exists(setup))
-                    throw new FileNotFoundException("修复需要完整的已安装 Launcher 和 Setup；请重新运行 v1.0.4 安装包。");
+                    throw new FileNotFoundException("修复需要完整的已安装 Launcher 和 Setup；请重新运行 v1.0.5 安装包。");
                 shortcutReceipt = CreateShortcuts(installRoot);
                 RegisterUninstallEntry(installRoot);
                 return true;
@@ -638,7 +633,7 @@ namespace ChatGPTFixSetup
                 if (Directory.Exists(binDir))
                 {
                     string self = System.Reflection.Assembly.GetExecutingAssembly().Location;
-                    foreach (string name in new[] { "ChatGPT-Fix-Launcher.exe", "ChatGPT-Fix-Manager.exe", "ChatGPT-Fix-Packer.exe", "ChatGPT-Fix-Setup.exe" })
+                    foreach (string name in new[] { "ChatGPT-Fix-Launcher.exe", "ChatGPT-Fix-Manager.exe", "ChatGPT-Fix-Packer.exe", "ChatGPT-Fix-Setup.exe", "ChatGPT-Fix-Locale.exe" })
                     {
                         string p = Path.Combine(binDir, name);
                         try
@@ -748,7 +743,7 @@ namespace ChatGPTFixSetup
             {
                 if (key == null) throw new IOException("无法创建 HKCU 卸载注册表项。");
                 key.SetValue("DisplayName", "ChatGPT-Fix");
-                key.SetValue("DisplayVersion", "1.0.4");
+                key.SetValue("DisplayVersion", "1.0.5");
                 key.SetValue("InstallLocation", installRoot);
                 key.SetValue("UninstallString", uninstallCmd);
                 key.SetValue("QuietUninstallString", uninstallCmd);
@@ -815,9 +810,10 @@ namespace ChatGPTFixSetup
                 "ChatGPT-Fix-Launcher.exe",
                 "ChatGPT-Fix-Manager.exe",
                 "ChatGPT-Fix-Packer.exe",
-                "ChatGPT-Fix-Setup.exe"
+                "ChatGPT-Fix-Setup.exe",
+                "ChatGPT-Fix-Locale.exe"
             };
-            var entries = new PayloadEntry[5];
+            var entries = new PayloadEntry[6];
             for (int i = 0; i < executables.Length; i++)
             {
                 entries[i] = new PayloadEntry
@@ -826,7 +822,7 @@ namespace ChatGPTFixSetup
                     RelativeDestination = Path.Combine("bin", executables[i])
                 };
             }
-            entries[4] = new PayloadEntry
+            entries[5] = new PayloadEntry
             {
                 Source = scriptSource,
                 RelativeDestination = Path.Combine("scripts", "inject-native-token-cost.js")
@@ -1248,8 +1244,8 @@ namespace ChatGPTFixSetup
             LastError = detail;
             _ntcWarning = true;
             WriteNtcLog(installRoot, -1, stdout, stderr + (string.IsNullOrEmpty(stderr) ? "" : "\r\n") + message);
-            SetStatus("Token 统计未启用：" + detail + " 请从外部 v1.0.4 安装包重新安装后重试。");
-            if (_cliMode) Console.WriteLine("NTC WARNING: Token statistics are not enabled. Retry with the external v1.0.4 installer. " + detail);
+            SetStatus("Token 统计未启用：" + detail + " 请从外部 v1.0.5 安装包重新安装后重试。");
+            if (_cliMode) Console.WriteLine("NTC WARNING: Token statistics are not enabled. Retry with the external v1.0.5 installer. " + detail);
             return false;
         }
 
@@ -1754,13 +1750,13 @@ namespace ChatGPTFixSetup
                     official.TargetPath = explorer;
                     official.Arguments = aumid;
                     official.WorkingDirectory = windows;
-                    official.Description = "ChatGPT official entry (managed by ChatGPT-Fix v1.0.4)";
+                    official.Description = "ChatGPT official entry (managed by ChatGPT-Fix v1.0.5)";
                     official.Save();
                     dynamic wrapper = ws.CreateShortcut(wrapperTemp);
                     wrapper.TargetPath = launcher;
                     wrapper.Arguments = "";
                     wrapper.WorkingDirectory = Path.GetDirectoryName(launcher);
-                    wrapper.Description = "ChatGPT-Fix Launcher wrapper (managed by ChatGPT-Fix v1.0.4)";
+                    wrapper.Description = "ChatGPT-Fix Launcher wrapper (managed by ChatGPT-Fix v1.0.5)";
                     wrapper.Save();
                     if (!IsOwnedOfficialShortcut(officialTemp)
                         || !IsOwnedWrapperShortcut(wrapperTemp, launcher))
@@ -2022,7 +2018,7 @@ namespace ChatGPTFixSetup
                     && string.Equals((string)shortcut.Arguments, @"shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App", StringComparison.Ordinal)
                     && PathsEqual((string)shortcut.WorkingDirectory, windows)
                     && string.Equals((string)shortcut.Description,
-                        "ChatGPT official entry (managed by ChatGPT-Fix v1.0.4)", StringComparison.Ordinal);
+                        "ChatGPT official entry (managed by ChatGPT-Fix v1.0.5)", StringComparison.Ordinal);
             }
             catch { return false; }
         }
@@ -2068,7 +2064,7 @@ namespace ChatGPTFixSetup
                     && string.Equals((string)shortcut.Arguments, "", StringComparison.Ordinal)
                     && PathsEqual((string)shortcut.WorkingDirectory, Path.GetDirectoryName(launcher))
                     && string.Equals((string)shortcut.Description,
-                        "ChatGPT-Fix Launcher wrapper (managed by ChatGPT-Fix v1.0.4)", StringComparison.Ordinal);
+                        "ChatGPT-Fix Launcher wrapper (managed by ChatGPT-Fix v1.0.5)", StringComparison.Ordinal);
             }
             catch { return false; }
         }

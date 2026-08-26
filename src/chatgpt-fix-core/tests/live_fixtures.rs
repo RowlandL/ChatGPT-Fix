@@ -249,7 +249,14 @@ fn fixture_mode_roundtrip_via_powershell() {
     );
 
     let output = Command::new("pwsh.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &ps_script,
+        ])
         .output()
         .expect("failed to execute PowerShell fixture mode test");
 

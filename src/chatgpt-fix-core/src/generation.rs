@@ -515,28 +515,72 @@ pub fn resolve_user_data_dir(program_root: &Path, baseline: &Path) -> PathBuf {
     let stable = program_root.join("profile").join("user-data");
     let marker = program_root
         .join("profile")
-        .join("user-data-migrated.marker");
+        .join("user-data-migrated-v2.marker");
     if !marker.exists() {
         // `fs::rename` requires the destination parent to exist.
         if let Some(parent) = stable.parent() {
             let _ = fs::create_dir_all(parent);
         }
         let legacy = baseline.join("profile").join("user-data");
-        if legacy.is_dir()
-            && !stable.exists()
-            && let Err(error) = fs::rename(&legacy, &stable)
-        {
-            // Same-volume rename is expected to succeed; a failure here
-            // (e.g. antivirus lock) must not block launch — fall back to
-            // a fresh stable profile and keep the legacy copy intact.
-            eprintln!("profile_migration_warning: cannot move legacy profile: {error}");
+        let mut migration_ok = true;
+        if legacy.is_dir() {
+            if !stable.exists() {
+                if let Err(error) = fs::rename(&legacy, &stable) {
+                    eprintln!("profile_migration_warning: cannot move legacy profile: {error}");
+                    migration_ok = false;
+                }
+            } else if profile_is_newer(&legacy, &stable) {
+                let backup = program_root.join("profile").join("user-data.pre-v1.0.5");
+                if backup.exists() {
+                    eprintln!(
+                        "profile_migration_warning: stable profile backup already exists at {}",
+                        backup.display()
+                    );
+                    migration_ok = false;
+                } else if let Err(error) = fs::rename(&stable, &backup) {
+                    eprintln!("profile_migration_warning: cannot back up stable profile: {error}");
+                    migration_ok = false;
+                } else if let Err(error) = fs::rename(&legacy, &stable) {
+                    eprintln!("profile_migration_warning: cannot promote legacy profile: {error}");
+                    let _ = fs::rename(&backup, &stable);
+                    migration_ok = false;
+                }
+            }
         }
-        if stable.exists() {
+        if let Err(error) = fs::create_dir_all(&stable) {
+            eprintln!("profile_migration_warning: cannot create stable profile: {error}");
+            migration_ok = false;
+        }
+        if migration_ok && stable.exists() {
             // Marker prevents re-running the migration on every launch.
-            let _ = fs::write(&marker, b"chatgpt-fix-profile-migrated-v1\n");
+            let _ = fs::write(&marker, b"chatgpt-fix-profile-migrated-v2\n");
         }
     }
     stable
+}
+
+fn profile_is_newer(candidate: &Path, current: &Path) -> bool {
+    newest_profile_mtime(candidate).unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+        > newest_profile_mtime(current).unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+}
+
+fn newest_profile_mtime(root: &Path) -> Option<std::time::SystemTime> {
+    let mut newest = None;
+    for entry in fs::read_dir(root).ok()?.flatten() {
+        let path = entry.path();
+        if let Ok(modified) = entry.metadata().and_then(|metadata| metadata.modified())
+            && newest.is_none_or(|value| modified > value)
+        {
+            newest = Some(modified);
+        }
+        if entry.file_type().is_ok_and(|file_type| file_type.is_dir())
+            && let Some(modified) = newest_profile_mtime(&path)
+            && newest.is_none_or(|value| modified > value)
+        {
+            newest = Some(modified);
+        }
+    }
+    newest
 }
 
 /// Launch the active ChatGPT baseline from `<program-root>/current.json`.
@@ -658,10 +702,7 @@ pub fn launch_from_pointer(program_root: &Path) -> Result<(LaunchV1, Option<u32>
     // baseline swap must never reset the user's appearance/desktop
     // settings or session state. One-time migration from the legacy
     // baseline profile is handled by `resolve_user_data_dir`.
-    // v1.0.4 (plan 1): authority profile path = baseline-local profile, so each
-    // baseline owns its login/desktop state and profiles never split across
-    // baselines or program-root migrations.
-    let profile_dir = baseline.join("profile").join("user-data");
+    let profile_dir = resolve_user_data_dir(program_root, baseline);
     let _ = fs::create_dir_all(&profile_dir);
     let mut command = Command::new(&executable);
     command

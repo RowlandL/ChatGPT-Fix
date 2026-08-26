@@ -39,4 +39,5 @@ Must (-not $rustSetup.Contains('fn which(')) 'Rust Setup still has a PATH helper
 Must (-not (Has 'NeedsCopy(')) 'weak three-key baseline copy gate remains'
 Must ($source.Contains('CopyTree(Path.Combine(appRoot, "app"), appDst, total);')) 'install does not always reconcile official app tree'
 Must ($source.Contains('RunProcessBounded')) 'Setup process execution is not routed through bounded helper'
+Must (-not (Has 'if (!EnsureNtc(installRoot, baseline))')) 'Setup still auto-enables the disabled NTC injector'
 Write-Output 'SETUP HARDENING STATIC TESTS PASSED'

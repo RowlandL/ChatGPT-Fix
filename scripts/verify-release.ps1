@@ -107,7 +107,8 @@ $requiredExecutables = @(
     'ChatGPT-Fix-Launcher.exe',
     'ChatGPT-Fix-Manager.exe',
     'ChatGPT-Fix-Packer.exe',
-    'ChatGPT-Fix-Setup.exe'
+    'ChatGPT-Fix-Setup.exe',
+    'ChatGPT-Fix-Locale.exe'
 )
 $nestedScript = Join-Path $staging 'scripts\inject-native-token-cost.js'
 $flatScript = Join-Path $staging 'inject-native-token-cost.js'
@@ -152,7 +153,8 @@ if ($setupVersion.FileVersion -ne $expectedSetupFileVersion -or $setupVersion.Pr
 foreach ($entry in @(
     @{ name = 'ChatGPT-Fix-Launcher.exe'; prefix = 'ChatGPT-Fix-Launcher' },
     @{ name = 'ChatGPT-Fix-Manager.exe'; prefix = 'ChatGPT-Fix-Manager' },
-    @{ name = 'ChatGPT-Fix-Packer.exe'; prefix = 'ChatGPT-Fix-Packer' }
+    @{ name = 'ChatGPT-Fix-Packer.exe'; prefix = 'ChatGPT-Fix-Packer' },
+    @{ name = 'ChatGPT-Fix-Locale.exe'; prefix = 'ChatGPT-Fix-Locale' }
 )) {
     $actual = (& (Join-Path $staging $entry.name) --version 2>$null | Out-String)
     $expected = $entry.prefix + ' ' + $ReleaseVersion + [Environment]::NewLine

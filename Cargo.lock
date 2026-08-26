@@ -4,39 +4,39 @@ version = 4
 
 [[package]]
 name = "chatgpt-fix-core"
-version = "1.0.4"
+version = "1.0.5"
 
 [[package]]
 name = "chatgpt-fix-launcher"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "chatgpt-fix-core",
 ]
 
 [[package]]
 name = "chatgpt-fix-locale"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "chatgpt-fix-core",
 ]
 
 [[package]]
 name = "chatgpt-fix-manager"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "chatgpt-fix-core",
 ]
 
 [[package]]
 name = "chatgpt-fix-packer"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "chatgpt-fix-core",
 ]
 
 [[package]]
 name = "chatgpt-fix-setup"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "chatgpt-fix-core",
 ]
