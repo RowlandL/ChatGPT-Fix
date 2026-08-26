@@ -50,6 +50,17 @@ const PATCHES = [
     "const projectContextRow = hubVisible() ? hasCodexProjectContextRow(doc) : false;",
     "skip full-document query while HUD hidden",
   ],
+  [
+    // v1.0.4 (plan 2): avoid toggling HUD display when visibility did not
+    // change. syncHubVisibility flips display (none <-> "") on every call;
+    // during thread switches the DOM rebuild re-runs it, and the display
+    // flip changes layout, which re-triggers the desktop app's own
+    // ResizeObserver -> layout loop on 26.814+/26.818 builds. Cache the last
+    // visibility and skip all DOM writes when it is unchanged.
+    "const target = root?.style ? root : state.root;\n    if (!target?.style) return visible;",
+    "const target = root?.style ? root : state.root;\n    if (!target?.style) return visible;\n    if (state.hubVisibilityLastVisible === visible) return visible;\n    state.hubVisibilityLastVisible = visible;",
+    "syncHubVisibility state cache (skip DOM writes when visibility unchanged)",
+  ],
 ];
 
 function patchUserscriptForRendererEfficiency(source) {
@@ -95,12 +106,16 @@ function main() {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "ntc-inject-"));
   try {
     // 1a. If an unpacked dir is provided, place it next to the extraction so
-    //     extractAll can resolve the native modules.
+    //     extractAll can resolve the native modules. The runtime asar is named
+    //     "app.asar" (the launcher-owned baseline copy), so Electron resolves
+    //     native modules from a sibling "<asar>.unpacked" whose internal
+    //     reference prefix is "app.asar.unpacked". We must therefore copy the
+    //     unpacked dir as <work>/app.asar.unpacked (FIXED name), NOT as
+    //     <work>/<input-src-name>.unpacked — using the latter makes the asar
+    //     header carry a bogus "app.asar.bak-no-ntc.unpacked/<...>" prefix and
+    //     the app then fails to load better-sqlite3.
     if (unpackedDir && fs.existsSync(unpackedDir)) {
-      const dstUnpacked = path.join(
-        work,
-        path.basename(inAsar) + ".unpacked"
-      );
+      const dstUnpacked = path.join(work, "app.asar.unpacked");
       fs.cpSync(unpackedDir, dstUnpacked, { recursive: true });
     }
 
@@ -194,8 +209,18 @@ function main() {
         fs.rmSync(work, { recursive: true, force: true });
       }
     };
+    // Repack with native-module preservation (v1.0.4 plan 2, verified):
+    // plain createPackage PACKS every file into the asar body, including
+    // better-sqlite3.node and other node-pty/@serialport natives. That is
+    // actually CORRECT for the launcher-owned baseline: the app loads native
+    // modules from the asar body (and the sibling app.asar.unpacked on disk
+    // carries the originals), so no unpack glob is needed and no native is
+    // lost. Verified: extracting a baseline asar and repacking with {}
+    // produces a working app.asar (better-sqlite3 loads, tslib resolves).
+    // A broad unpack glob like "**/node_modules/**" is WRONG: it also unpacks
+    // tslib and other pure-JS deps, and the app then fails to resolve them.
     asar
-      .createPackage(work, outAsar)
+      .createPackageWithOptions(work, outAsar, {})
       .then(() => {
         const after = sha256(outAsar);
         console.log(
