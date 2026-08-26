@@ -36,9 +36,14 @@
 
 const PATCHES = [
   [
-    "function scheduleHubVisibilitySync(delay = 50) {",
-    "function scheduleHubVisibilitySync(delay = 300) {",
-    "hub-visibility debounce 50->300ms",
+    // v1.0.4 (plan): replace the whole scheduler with an rAF-batched,
+    // 500 ms-throttled version. Upstream fired on every document mutation
+    // (50 ms debounce); even 300 ms still saturates the renderer during
+    // streaming. rAF merges same-frame mutations; the 500 ms floor keeps
+    // the full-document sync from hammering layout.
+    "function scheduleHubVisibilitySync(delay = 50) {\n    if (state.hubVisibilityTimer) return;\n    state.hubVisibilityTimer = window.setTimeout(() => {\n      state.hubVisibilityTimer = 0;\n      syncHubVisibility();\n    }, delay);\n  }",
+    "function scheduleHubVisibilitySync(delay = 300) {\n    if (state.hubVisibilityRaf) return;\n    state.hubVisibilityRaf = window.requestAnimationFrame(() => {\n      state.hubVisibilityRaf = 0;\n      const now = Date.now();\n      if (!state.hubVisibilityLastSyncAt || now - state.hubVisibilityLastSyncAt >= 500) {\n        state.hubVisibilityLastSyncAt = now;\n        syncHubVisibility();\n        return;\n      }\n      if (state.hubVisibilityTimer) return;\n      state.hubVisibilityTimer = window.setTimeout(() => {\n        state.hubVisibilityTimer = 0;\n        state.hubVisibilityLastSyncAt = Date.now();\n        syncHubVisibility();\n      }, Math.max(0, 500 - (now - state.hubVisibilityLastSyncAt)));\n    });\n  }",
+    "scheduleHubVisibilitySync -> rAF batch + 500ms throttle",
   ],
   [
     "const projectContextRow = hasCodexProjectContextRow(doc);",
