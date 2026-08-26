@@ -8,5 +8,5 @@ fn version_command_reports_workspace_version() {
         .expect("run locale tool");
 
     assert!(output.status.success());
-    assert_eq!(output.stdout, b"ChatGPT-Fix-Locale 1.0.3\n");
+    assert_eq!(output.stdout, b"ChatGPT-Fix-Locale 1.0.4\n");
 }

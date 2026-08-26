@@ -374,7 +374,15 @@ fn copy_dir_manifest(
     fs::create_dir_all(dst).ok()?;
     let mut out = Vec::new();
     let mut done_bytes = 0u64;
-    copy_dir_manifest_inner(src, src, dst, &mut done_bytes, total_bytes, progress, &mut out)?;
+    copy_dir_manifest_inner(
+        src,
+        src,
+        dst,
+        &mut done_bytes,
+        total_bytes,
+        progress,
+        &mut out,
+    )?;
     Some(out)
 }
 
@@ -399,19 +407,11 @@ fn copy_dir_manifest_inner(
             // Regression fix: the 1.0.1+ refactor dropped this mkdir, so any
             // package with subdirectories failed staging at the first subdir.
             fs::create_dir_all(chatgpt_fix_core::long_path(&to)).ok()?;
-            copy_dir_manifest_inner(
-                &from,
-                root_src,
-                &to,
-                done_bytes,
-                total_bytes,
-                progress,
-                out,
-            )?;
+            copy_dir_manifest_inner(&from, root_src, &to, done_bytes, total_bytes, progress, out)?;
         } else {
             let bytes = fs::copy(
-                &chatgpt_fix_core::long_path(&from),
-                &chatgpt_fix_core::long_path(&to),
+                chatgpt_fix_core::long_path(&from),
+                chatgpt_fix_core::long_path(&to),
             )
             .ok()?;
             let data = fs::read(chatgpt_fix_core::long_path(&from)).ok()?;

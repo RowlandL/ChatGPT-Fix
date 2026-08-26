@@ -513,20 +513,23 @@ pub fn write_shortcut_json(
 /// (the launch path itself skips migration while an instance is running).
 pub fn resolve_user_data_dir(program_root: &Path, baseline: &Path) -> PathBuf {
     let stable = program_root.join("profile").join("user-data");
-    let marker = program_root.join("profile").join("user-data-migrated.marker");
+    let marker = program_root
+        .join("profile")
+        .join("user-data-migrated.marker");
     if !marker.exists() {
         // `fs::rename` requires the destination parent to exist.
         if let Some(parent) = stable.parent() {
             let _ = fs::create_dir_all(parent);
         }
         let legacy = baseline.join("profile").join("user-data");
-        if legacy.is_dir() && !stable.exists() {
-            if let Err(error) = fs::rename(&legacy, &stable) {
-                // Same-volume rename is expected to succeed; a failure here
-                // (e.g. antivirus lock) must not block launch — fall back to
-                // a fresh stable profile and keep the legacy copy intact.
-                eprintln!("profile_migration_warning: cannot move legacy profile: {error}");
-            }
+        if legacy.is_dir()
+            && !stable.exists()
+            && let Err(error) = fs::rename(&legacy, &stable)
+        {
+            // Same-volume rename is expected to succeed; a failure here
+            // (e.g. antivirus lock) must not block launch — fall back to
+            // a fresh stable profile and keep the legacy copy intact.
+            eprintln!("profile_migration_warning: cannot move legacy profile: {error}");
         }
         if stable.exists() {
             // Marker prevents re-running the migration on every launch.
@@ -737,7 +740,7 @@ fn build_reuse_launch(baseline: &Path, executable: &Path) -> Result<LaunchV1, Co
         executable: SafeRelativePath::parse(
             executable
                 .strip_prefix(baseline)
-                .unwrap_or(&executable)
+                .unwrap_or(executable)
                 .to_string_lossy()
                 .replace('\\', "/")
                 .as_str(),

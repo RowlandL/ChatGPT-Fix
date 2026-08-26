@@ -235,7 +235,9 @@ fn stable_profile_migration_moves_once_and_is_reused() {
         "legacy baseline profile moved away"
     );
     assert!(
-        root.join("profile").join("user-data-migrated.marker").exists(),
+        root.join("profile")
+            .join("user-data-migrated.marker")
+            .exists(),
         "migration marker written"
     );
 

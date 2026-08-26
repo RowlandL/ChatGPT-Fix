@@ -18,7 +18,7 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 
 ## 安装使用
 
-1. 从 [Releases](https://github.com/RowlandL/ChatGPT-Fix/releases) 下载 v1.0.3 的 zip（推荐，内部保留 `scripts/`）并解压；也可以将五个 EXE 与扁平文件名 `inject-native-token-cost.js` 下载到同一目录
+1. 从 [Releases](https://github.com/RowlandL/ChatGPT-Fix/releases) 下载 v1.0.4 的 zip（推荐，内部保留 `scripts/`）并解压；也可以将五个 EXE 与扁平文件名 `inject-native-token-cost.js` 下载到同一目录
 2. 需先安装官方 OpenAI.Codex（ChatGPT 桌面版）
 3. 双击运行 `ChatGPT-Fix-Setup.exe`，安装器会从其所在 payload 目录完成安装或升级
 4. 双击开始菜单的 **ChatGPT-Fix-Launcher** 或 **ChatGPT** 启动
@@ -72,7 +72,7 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 - Rust `x86_64-pc-windows-msvc`，纯标准库（最小 Win32 FFI），无外部 crate 依赖
 - 发布前运行测试与 clippy；仅在实际构建后发布对应的校验和、SBOM 与 receipt
 - 构建产物哈希见各 Release 的 `SHA256SUMS.txt`
-- 下载全部 Release 资产后可运行 `scripts/verify-downloaded-release.ps1 -DownloadDirectory <目录> -ExpectedVersion 1.0.3 -ExpectedSourceCommit <tag commit>` 独立复核资产、zip、receipt 与 SBOM
+- 下载全部 Release 资产后可运行 `scripts/verify-downloaded-release.ps1 -DownloadDirectory <目录> -ExpectedVersion 1.0.4 -ExpectedSourceCommit <tag commit>` 独立复核资产、zip、receipt 与 SBOM
 
 ## 许可证
 

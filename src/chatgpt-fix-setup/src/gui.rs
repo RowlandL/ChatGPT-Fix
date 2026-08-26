@@ -5,7 +5,7 @@
 //!
 //! Layout:
 //!   [ ChatGPT-Fix 安装程序 ]          (window title)
-//!   ChatGPT-Fix 1.0.3                (product label)
+//!   ChatGPT-Fix 1.0.4                (product label)
 //!   将把官方 ChatGPT 桌面版复制到用户目录运行…… (guide text)
 //!   [ status text ]                  (status label)
 //!   [==============progress========] (progress bar)

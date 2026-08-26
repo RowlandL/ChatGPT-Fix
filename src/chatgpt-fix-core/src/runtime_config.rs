@@ -72,9 +72,7 @@ pub fn sanitize_codex_config_text_for_home(
             continue;
         }
 
-        if in_windows_section
-            && (trimmed == r#"sandbox = "low""# || trimmed == "sandbox = 'low'")
-        {
+        if in_windows_section && (trimmed == r#"sandbox = "low""# || trimmed == "sandbox = 'low'") {
             let indent_len = body.len() - body.trim_start().len();
             output.push_str(&body[..indent_len]);
             output.push_str(r#"sandbox = "elevated""#);
@@ -294,7 +292,9 @@ pub fn preserve_desktop_section_at(
                     ContractError::new(
                         "config_commit_failed",
                         config_path.to_string_lossy(),
-                        format!("cannot replace config.toml after rename error {first_error}: {error}"),
+                        format!(
+                            "cannot replace config.toml after rename error {first_error}: {error}"
+                        ),
                     )
                 })?;
                 fs::rename(&temp_path, config_path).map_err(|error| {
@@ -329,5 +329,9 @@ fn extract_desktop_section(input: &str) -> Option<String> {
             output.push_str(raw_line);
         }
     }
-    if output.is_empty() { None } else { Some(output) }
+    if output.is_empty() {
+        None
+    } else {
+        Some(output)
+    }
 }

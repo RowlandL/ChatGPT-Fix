@@ -5,7 +5,8 @@ use chatgpt_fix_core::{
 };
 
 fn temp_dir(tag: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("chatgpt-fix-desktop-{tag}-{}", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("chatgpt-fix-desktop-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("create temp dir");
     dir
@@ -73,7 +74,11 @@ fn desktop_section_live_value_wins_over_stale_copy() {
     // exit. The next launcher run refreshes the copy from the live value.
     std::fs::write(
         &config,
-        concat!("[desktop]\n", "appearanceTheme = \"dark\"\n", "localeOverride = \"zh-CN\"\n"),
+        concat!(
+            "[desktop]\n",
+            "appearanceTheme = \"dark\"\n",
+            "localeOverride = \"zh-CN\"\n"
+        ),
     )
     .expect("write updated config");
     preserve_desktop_section_at(&config, &state).expect("refresh from live");
@@ -119,10 +124,8 @@ fn removes_reserved_bundled_marketplace_and_orphan_plugin_sections() {
         "enabled = true\n",
     );
 
-    let (output, changed) = sanitize_codex_config_text_for_home(
-        input,
-        Some(Path::new(r#"C:\Users\Alice\.codex"#)),
-    );
+    let (output, changed) =
+        sanitize_codex_config_text_for_home(input, Some(Path::new(r#"C:\Users\Alice\.codex"#)));
 
     assert!(changed);
     assert!(output.contains("approval_policy = \"never\""));

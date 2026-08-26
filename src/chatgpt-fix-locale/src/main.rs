@@ -55,7 +55,10 @@ fn locate_app_asar(baseline: &Path) -> Result<PathBuf, String> {
             return Ok(candidate);
         }
     }
-    Err(format!("app.asar not found under baseline {}", baseline.display()))
+    Err(format!(
+        "app.asar not found under baseline {}",
+        baseline.display()
+    ))
 }
 
 /// The launcher-owned baseline is safe to patch only while the app is not
@@ -95,7 +98,10 @@ fn resolve_script(program_root: &Path) -> PathBuf {
         return installed;
     }
     // Dev fallback: the crate's own scripts directory.
-    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "\\scripts\\inject-locale-i18n.js"))
+    PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "\\scripts\\inject-locale-i18n.js"
+    ))
 }
 
 fn resolve_node() -> String {
@@ -113,11 +119,11 @@ fn run_script(program_root: &Path, script: &Path, args: &[&OsStr]) -> Result<Str
         .join("node_modules")
         .to_string_lossy()
         .into_owned();
-    if let Ok(existing) = std::env::var("NODE_PATH") {
-        if !existing.is_empty() {
-            node_path.push(';');
-            node_path.push_str(&existing);
-        }
+    if let Ok(existing) = std::env::var("NODE_PATH")
+        && !existing.is_empty()
+    {
+        node_path.push(';');
+        node_path.push_str(&existing);
     }
     command.env("NODE_PATH", &node_path);
     command.arg(script);
@@ -139,8 +145,8 @@ fn run_script(program_root: &Path, script: &Path, args: &[&OsStr]) -> Result<Str
     // The receipt/status JSON is the last non-empty stdout line.
     Ok(stdout
         .lines()
-        .filter(|line| line.trim_start().starts_with('{'))
-        .last()
+        .rev()
+        .find(|line| line.trim_start().starts_with('{'))
         .unwrap_or(&stdout)
         .trim()
         .to_owned())
@@ -176,7 +182,11 @@ fn run_status(program_root: &Path) -> ExitCode {
         );
         return ExitCode::from(4);
     }
-    match run_script(program_root, &script, &[OsStr::new("check"), app_asar.as_os_str()]) {
+    match run_script(
+        program_root,
+        &script,
+        &[OsStr::new("check"), app_asar.as_os_str()],
+    ) {
         Ok(json) => {
             println!("{json}");
             ExitCode::SUCCESS
@@ -230,14 +240,13 @@ fn run_fix(program_root: &Path) -> ExitCode {
             program_root,
             &script,
             &[OsStr::new("check"), app_asar.as_os_str()],
-        ) {
-            if json.contains("\"status\":\"patched\"") {
-                println!(
-                    "{{\"schema\":\"chatgpt_fix.locale_fix.v1\",\"status\":\"already_fixed\",\"baseline\":\"{}\"}}",
-                    baseline.to_string_lossy().replace('\\', "/")
-                );
-                return ExitCode::SUCCESS;
-            }
+        ) && json.contains("\"status\":\"patched\"")
+        {
+            println!(
+                "{{\"schema\":\"chatgpt_fix.locale_fix.v1\",\"status\":\"already_fixed\",\"baseline\":\"{}\"}}",
+                baseline.to_string_lossy().replace('\\', "/")
+            );
+            return ExitCode::SUCCESS;
         }
     }
 
@@ -287,9 +296,7 @@ fn run_fix(program_root: &Path) -> ExitCode {
 
     // Commit: preserve the original asar, then atomically replace it.
     if let Err(error) = fs::rename(&app_asar, &backup_path) {
-        eprintln!(
-            "locale_fix_failed: cannot preserve original asar: {error}"
-        );
+        eprintln!("locale_fix_failed: cannot preserve original asar: {error}");
         let _ = fs::remove_file(&out_path);
         return ExitCode::from(4);
     }

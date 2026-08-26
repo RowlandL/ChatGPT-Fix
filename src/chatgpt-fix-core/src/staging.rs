@@ -208,8 +208,8 @@ fn copy_file(
     }
     // Reject target escape by construction: relative is SafeRelativePath-safe.
     let copied = fs::copy(
-        &crate::path::long_path(&source),
-        &crate::path::long_path(&target),
+        crate::path::long_path(&source),
+        crate::path::long_path(&target),
     )
     .map_err(|error| {
         contract_error(

@@ -1,5 +1,5 @@
-use std::fmt;
 use std::ffi::OsString;
+use std::fmt;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -19,7 +19,23 @@ pub fn long_path(path: &Path) -> OsString {
         if !path.is_absolute() || text.starts_with(r"\\?\") || text.starts_with(r"\\.\") {
             return path.as_os_str().to_os_string();
         }
-        let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+        let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+        // Only prefix paths that actually need it. The `\\?\` form disables
+        // path normalization, so `.`/`..` segments and forward slashes that
+        // would be resolved by the OS are NOT processed for prefixed paths
+        // (os errors 161/123). Prefixing only long paths keeps short paths
+        // on the plain normalized path and confines these semantics to the
+        // >MAX_PATH case for which \\?\ was invented.
+        if wide.len() < 240 {
+            return path.as_os_str().to_os_string();
+        }
+        // Normalize `/` to `\\` for the prefixed form; callers may pass
+        // SafeRelativePath-style forward-slash segments joined onto a root.
+        for w in &mut wide {
+            if *w == b'/' as u16 {
+                *w = b'\\' as u16;
+            }
+        }
         let mut out = Vec::with_capacity(wide.len() + 8);
         if text.starts_with(r"\\") {
             // UNC: \\server\share -> \\?\UNC\server\share
