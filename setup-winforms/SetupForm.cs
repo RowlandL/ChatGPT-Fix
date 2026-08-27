@@ -668,6 +668,13 @@ namespace ChatGPTFixSetup
                     cleanupErrors.Append(" [scripts/inject-native-token-cost.js: ")
                         .Append(ex.Message).Append("]");
                 }
+                string managedLocaleScript = Path.Combine(scriptsDir, "inject-locale-i18n.js");
+                try { if (File.Exists(managedLocaleScript)) File.Delete(managedLocaleScript); }
+                catch (Exception ex)
+                {
+                    cleanupErrors.Append(" [scripts/inject-locale-i18n.js: ")
+                        .Append(ex.Message).Append("]");
+                }
                 try
                 {
                     if (Directory.Exists(scriptsDir)
@@ -807,7 +814,11 @@ namespace ChatGPTFixSetup
             string scriptSource = Path.Combine(sourceDirectory, "scripts", "inject-native-token-cost.js");
             if (!File.Exists(scriptSource))
                 scriptSource = Path.Combine(sourceDirectory, "inject-native-token-cost.js");
+            string localeScriptSource = Path.Combine(sourceDirectory, "scripts", "inject-locale-i18n.js");
+            if (!File.Exists(localeScriptSource))
+                localeScriptSource = Path.Combine(sourceDirectory, "inject-locale-i18n.js");
             EnsureNoReparseComponents(scriptSource);
+            EnsureNoReparseComponents(localeScriptSource);
 
             string[] executables = {
                 "ChatGPT-Fix-Launcher.exe",
@@ -816,7 +827,7 @@ namespace ChatGPTFixSetup
                 "ChatGPT-Fix-Setup.exe",
                 "ChatGPT-Fix-Locale.exe"
             };
-            var entries = new PayloadEntry[6];
+            var entries = new PayloadEntry[7];
             for (int i = 0; i < executables.Length; i++)
             {
                 entries[i] = new PayloadEntry
@@ -829,6 +840,11 @@ namespace ChatGPTFixSetup
             {
                 Source = scriptSource,
                 RelativeDestination = Path.Combine("scripts", "inject-native-token-cost.js")
+            };
+            entries[6] = new PayloadEntry
+            {
+                Source = localeScriptSource,
+                RelativeDestination = Path.Combine("scripts", "inject-locale-i18n.js")
             };
 
             string token = Guid.NewGuid().ToString("N");

@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 
 $scriptPath = Join-Path $PSScriptRoot 'verify-release.ps1'
 $source = Get-Content -LiteralPath $scriptPath -Raw
+$localeSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\src\chatgpt-fix-locale\src\main.rs') -Raw
 
 foreach ($marker in @('D:\\project', 'C:\\Users')) {
     if ($source -match [regex]::Escape($marker)) {
@@ -24,11 +25,19 @@ if ($source -notmatch 'function\s+Assert-ReleaseBinariesHaveNoBuildPath') {
 if ($source -notmatch 'Assert-ReleaseBinariesHaveNoBuildPath\s+-Paths\s+\$artifactPaths') {
     throw 'verify-release.ps1 must pass the complete release executable set to the path scanner'
 }
+if ($localeSource -match 'env!\s*\(\s*"CARGO_MANIFEST_DIR"' -or
+    $localeSource -match 'concat!\s*\(') {
+    throw 'locale release binary still has a compile-time source-tree fallback'
+}
 if ($source -notmatch '\[System\.IO\.Path\]::GetRelativePath\(\$staging,\s*\$path\)') {
     throw 'verify-release.ps1 must keep artifact paths relative for publishable evidence'
 }
 if ($source -notmatch 'staging_directory\s*=\s*''\.''') {
     throw 'verify-release.ps1 must not publish the local staging directory'
+}
+if ($source -notmatch 'inject-locale-i18n\.js' -or
+    $source -notmatch 'required_locale_script_sha256') {
+    throw 'verify-release.ps1 must verify the locale injector payload'
 }
 
 $downloadSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'verify-downloaded-release.ps1') -Raw
@@ -40,10 +49,16 @@ $ciSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\.github\workfl
 if ($ciSource -notmatch 'chatgpt-fix-locale\.exe') {
     throw 'CI release staging must include ChatGPT-Fix-Locale.exe'
 }
+if ($ciSource -notmatch 'inject-locale-i18n\.js') {
+    throw 'CI release staging must include the locale injector in both layouts'
+}
 
 $releaseWorkflow = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\.github\workflows\release-v1.0.5.yml') -Raw
 if ($releaseWorkflow -notmatch 'prepare-local-release\.ps1') {
     throw 'v1.0.5 release workflow must use the current local release candidate generator'
+}
+if ($releaseWorkflow -notmatch 'expected 14') {
+    throw 'v1.0.5 release workflow must publish the complete locale-enabled asset set'
 }
 
 Write-Output 'release path policy passed'

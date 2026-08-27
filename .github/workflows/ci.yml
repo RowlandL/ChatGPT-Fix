@@ -47,6 +47,8 @@ jobs:
           Copy-Item target\release\chatgpt-fix-locale.exe (Join-Path $stage 'ChatGPT-Fix-Locale.exe')
           Copy-Item src\chatgpt-fix-manager\scripts\inject-native-token-cost.js (Join-Path $stage 'scripts\inject-native-token-cost.js')
           Copy-Item src\chatgpt-fix-manager\scripts\inject-native-token-cost.js (Join-Path $stage 'inject-native-token-cost.js')
+          Copy-Item src\chatgpt-fix-locale\scripts\inject-locale-i18n.js (Join-Path $stage 'scripts\inject-locale-i18n.js')
+          Copy-Item src\chatgpt-fix-locale\scripts\inject-locale-i18n.js (Join-Path $stage 'inject-locale-i18n.js')
           $releaseVersion = (Get-Content VERSION -Raw).Trim()
           .\scripts\test-setup-hardening.ps1
           .\scripts\test-setup-isolation.ps1

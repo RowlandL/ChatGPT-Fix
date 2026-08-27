@@ -20,6 +20,7 @@ function Must {
 
 Must (-not (Has ('chatgpt-fix-manager' + $dq + ', ' + $dq + 'scripts' + $dq))) 'source-tree injector fallback is still present'
 Must (Has 'RelativeDestination = Path.Combine') 'managed scripts payload is missing'
+Must (Has 'inject-locale-i18n.js') 'locale injector payload is missing'
 Must (Has 'payload') 'missing payload does not fail closed'
 Must (Has 'if (key == null) throw new IOException') 'null uninstall registry key is silently accepted'
 Must (Has 'Launcher') 'launcher startup failure has no warning contract'

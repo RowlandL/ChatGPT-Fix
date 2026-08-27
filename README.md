@@ -18,7 +18,7 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 
 ## 安装使用
 
-1. 从 [Releases](https://github.com/RowlandL/ChatGPT-Fix/releases) 下载 v1.0.5 的 zip（推荐，内部保留 `scripts/`）并解压；也可以将五个 EXE 与扁平文件名 `inject-native-token-cost.js` 下载到同一目录
+1. 从 [Releases](https://github.com/RowlandL/ChatGPT-Fix/releases) 下载 v1.0.5 的 zip（推荐，内部保留 `scripts/`）并解压；也可以将五个 EXE 与扁平文件名 `inject-native-token-cost.js`、`inject-locale-i18n.js` 下载到同一目录
 2. 需先安装官方 OpenAI.Codex（ChatGPT 桌面版）
 3. 双击运行 `ChatGPT-Fix-Setup.exe`，安装器会从其所在 payload 目录完成安装或升级
 4. 双击开始菜单的 **ChatGPT-Fix-Launcher** 或 **ChatGPT** 启动

@@ -103,6 +103,7 @@ $binaryMap = [ordered]@{
     'ChatGPT-Fix-Locale.exe'   = 'chatgpt-fix-locale.exe'
 }
 $injector = Resolve-File -Path (Join-Path $repository 'src\chatgpt-fix-manager\scripts\inject-native-token-cost.js') -Label 'managed injector'
+$localeInjector = Resolve-File -Path (Join-Path $repository 'src\chatgpt-fix-locale\scripts\inject-locale-i18n.js') -Label 'locale injector'
 $package = Join-Path $output 'package'
 New-Item -ItemType Directory -Path (Join-Path $package 'scripts') -Force | Out-Null
 
@@ -116,6 +117,9 @@ Copy-Item -LiteralPath $setup -Destination (Join-Path $output 'ChatGPT-Fix-Setup
 Copy-Item -LiteralPath $injector -Destination (Join-Path $package 'scripts\inject-native-token-cost.js')
 Copy-Item -LiteralPath $injector -Destination (Join-Path $package 'inject-native-token-cost.js')
 Copy-Item -LiteralPath $injector -Destination (Join-Path $output 'inject-native-token-cost.js')
+Copy-Item -LiteralPath $localeInjector -Destination (Join-Path $package 'scripts\inject-locale-i18n.js')
+Copy-Item -LiteralPath $localeInjector -Destination (Join-Path $package 'inject-locale-i18n.js')
+Copy-Item -LiteralPath $localeInjector -Destination (Join-Path $output 'inject-locale-i18n.js')
 
 $setupInfo = (Get-Item -LiteralPath (Join-Path $output 'ChatGPT-Fix-Setup.exe')).VersionInfo
 if ($setupInfo.FileVersion -ne "$ReleaseVersion.0" -or $setupInfo.ProductVersion -ne $ReleaseVersion) {
@@ -150,6 +154,7 @@ $verificationText | Set-Content -LiteralPath (Join-Path $output 'verification.js
 # The verifier needs both supported source layouts. The distributable zip keeps
 # only the managed scripts/ layout required by the installer contract.
 Remove-Item -LiteralPath (Join-Path $package 'inject-native-token-cost.js') -Force
+Remove-Item -LiteralPath (Join-Path $package 'inject-locale-i18n.js') -Force
 $zipName = "ChatGPT-Fix-v$ReleaseVersion-win-x64.zip"
 $zipPath = Join-Path $output $zipName
 Compress-Archive -Path (Join-Path $package '*') -DestinationPath $zipPath -CompressionLevel Optimal
@@ -161,6 +166,7 @@ $runtimeNames = @(
     'ChatGPT-Fix-Setup.exe',
     'ChatGPT-Fix-Locale.exe',
     'inject-native-token-cost.js',
+    'inject-locale-i18n.js',
     $zipName
 )
 $runtimeLines = foreach ($name in $runtimeNames) {
@@ -214,12 +220,13 @@ $hashedNames = @($runtimeNames) + @(
     'RELEASE-NOTES.md'
 )
 @"
-# ChatGPT-Fix v$ReleaseVersion local release candidate
+# ChatGPT-Fix v$ReleaseVersion release candidate
 
 Source commit: $commit
 Target: x86_64-pc-windows-msvc
 Signing: unsigned
-Scope: local gate only; no remote publication and no CC Switch mutation.
+Scope: generated from a verified source checkout; artifacts are unsigned and
+publication is controlled by the release workflow. No CC Switch mutation.
 "@ | Set-Content -LiteralPath (Join-Path $output 'RELEASE-NOTES.md') -Encoding utf8
 $sumLines = foreach ($name in $hashedNames) {
     "$(Get-Hash (Join-Path $output $name))  $name"

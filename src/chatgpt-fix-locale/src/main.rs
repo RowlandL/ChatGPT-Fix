@@ -97,11 +97,11 @@ fn resolve_script(program_root: &Path) -> PathBuf {
     if installed.is_file() {
         return installed;
     }
-    // Dev fallback: the crate's own scripts directory.
-    PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "\\scripts\\inject-locale-i18n.js"
-    ))
+    // Release binaries must use the script installed beside the tool. There
+    // is deliberately no source-tree fallback: embedding CARGO_MANIFEST_DIR
+    // would leak a build-machine path into the published executable and could
+    // make a clean installation fail to find its own payload.
+    program_root.join("scripts").join("inject-locale-i18n.js")
 }
 
 fn resolve_node() -> String {

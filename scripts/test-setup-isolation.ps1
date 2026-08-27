@@ -115,10 +115,16 @@ try {
         [IO.File]::WriteAllText($destination, ('old-' + $name))
     }
     [IO.File]::WriteAllText((Join-Path $payload 'inject-native-token-cost.js'), 'new-injector')
+    [IO.File]::WriteAllText((Join-Path $payload 'inject-locale-i18n.js'), 'new-locale-injector')
     $injectDestination = Join-Path $payloadInstall 'scripts\inject-native-token-cost.js'
     New-Item -ItemType Directory -Path (Split-Path -Parent $injectDestination) -Force | Out-Null
     [IO.File]::WriteAllText($injectDestination, 'old-injector')
+    $localeInjectDestination = Join-Path $payloadInstall 'scripts\inject-locale-i18n.js'
+    [IO.File]::WriteAllText($localeInjectDestination, 'old-locale-injector')
     $deployment = $deploy.Invoke($null, [object[]]@([string]$payloadInstall, [string]$payload))
+    if ((Get-Content -LiteralPath (Join-Path $payloadInstall 'scripts\inject-locale-i18n.js') -Raw) -ne 'new-locale-injector') {
+        throw 'payload deployment did not install locale injector'
+    }
     $rollbackPayload = $setupType.GetMethod('RollbackPayloadDeployment', $flags)
     if (-not $rollbackPayload) { throw 'payload rollback helper is missing' }
     $rollbackPayload.Invoke($null, [object[]]@($deployment)) | Out-Null
@@ -127,6 +133,7 @@ try {
         if ((Get-Content -LiteralPath $destination -Raw) -ne ('old-' + $name)) { throw 'payload rollback did not restore ' + $name }
     }
     if ((Get-Content -LiteralPath $injectDestination -Raw) -ne 'old-injector') { throw 'payload rollback did not restore injector' }
+    if ((Get-Content -LiteralPath $localeInjectDestination -Raw) -ne 'old-locale-injector') { throw 'payload rollback did not restore locale injector' }
     Write-Output 'PAYLOAD PRE-CURRENT ROLLBACK TEST PASSED'
 
     $dirStats = $setupType.GetMethod('DirStats', $flags)
@@ -203,6 +210,7 @@ try {
     }
     New-Item -ItemType Directory -Path (Join-Path $integrationPayload 'scripts') -Force | Out-Null
     [IO.File]::WriteAllText((Join-Path $integrationPayload 'scripts\inject-native-token-cost.js'), 'payload-injector')
+    [IO.File]::WriteAllText((Join-Path $integrationPayload 'scripts\inject-locale-i18n.js'), 'payload-locale-injector')
     $integrationGuid = [Guid]::NewGuid().ToString('N')
     $integrationSubkey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\ChatGPT-Fix-LongPath-' + $integrationGuid
     $integrationConfig = '{"install_root":"' + $integrationInstall.Replace('\','\\') + '","shell_root":"' +

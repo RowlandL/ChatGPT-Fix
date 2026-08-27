@@ -112,7 +112,9 @@ $requiredExecutables = @(
 )
 $nestedScript = Join-Path $staging 'scripts\inject-native-token-cost.js'
 $flatScript = Join-Path $staging 'inject-native-token-cost.js'
-foreach ($path in @($nestedScript, $flatScript)) {
+$nestedLocaleScript = Join-Path $staging 'scripts\inject-locale-i18n.js'
+$flatLocaleScript = Join-Path $staging 'inject-locale-i18n.js'
+foreach ($path in @($nestedScript, $flatScript, $nestedLocaleScript, $flatLocaleScript)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Release staging is missing required injector layout: $path"
     }
@@ -121,6 +123,11 @@ $nestedScriptHash = (Get-FileHash -LiteralPath $nestedScript -Algorithm SHA256).
 $flatScriptHash = (Get-FileHash -LiteralPath $flatScript -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($nestedScriptHash -ne $flatScriptHash) {
     throw 'Nested and flat injector payloads do not match'
+}
+$nestedLocaleScriptHash = (Get-FileHash -LiteralPath $nestedLocaleScript -Algorithm SHA256).Hash.ToLowerInvariant()
+$flatLocaleScriptHash = (Get-FileHash -LiteralPath $flatLocaleScript -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($nestedLocaleScriptHash -ne $flatLocaleScriptHash) {
+    throw 'Nested and flat locale injector payloads do not match'
 }
 
 $artifacts = @()
@@ -174,4 +181,7 @@ Assert-ReleaseBinariesHaveNoBuildPath -Paths $artifactPaths -ForbiddenMarkers (G
     required_script = [System.IO.Path]::GetRelativePath($staging, $nestedScript)
     flat_script = [System.IO.Path]::GetRelativePath($staging, $flatScript)
     required_script_sha256 = $nestedScriptHash
+    required_locale_script = [System.IO.Path]::GetRelativePath($staging, $nestedLocaleScript)
+    flat_locale_script = [System.IO.Path]::GetRelativePath($staging, $flatLocaleScript)
+    required_locale_script_sha256 = $nestedLocaleScriptHash
 } | ConvertTo-Json -Depth 4

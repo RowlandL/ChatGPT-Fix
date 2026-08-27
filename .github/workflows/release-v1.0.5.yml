@@ -80,5 +80,5 @@ jobs:
           if ($LASTEXITCODE -eq 0) { throw 'v1.0.5 already exists; refusing to replace assets' }
           $releaseDir = '${{ steps.payload.outputs.release_dir }}'
           $assets = @(Get-ChildItem -LiteralPath $releaseDir -File | Sort-Object Name | ForEach-Object FullName)
-          if ($assets.Count -ne 13) { throw "release asset count is $($assets.Count), expected 13" }
+          if ($assets.Count -ne 14) { throw "release asset count is $($assets.Count), expected 14" }
           gh release create v1.0.5 --verify-tag --title 'ChatGPT-Fix v1.0.5' --notes-file (Join-Path $releaseDir 'RELEASE-NOTES.md') $assets

@@ -28,6 +28,7 @@ $runtimeAssets = @(
     'ChatGPT-Fix-Setup.exe',
     'ChatGPT-Fix-Locale.exe',
     'inject-native-token-cost.js',
+    'inject-locale-i18n.js',
     "ChatGPT-Fix-v$ExpectedVersion-win-x64.zip"
 )
 $hashedAssets = $runtimeAssets + @(
@@ -108,7 +109,8 @@ $verification = Get-Content -LiteralPath (Join-Path $root 'verification.json') -
 if ($verification.release_version -ne $ExpectedVersion -or
     $verification.payload_verified -ne $true -or
     $verification.installer_executed -ne $false -or
-    $verification.required_script_sha256 -ne $hashes['inject-native-token-cost.js']) {
+    $verification.required_script_sha256 -ne $hashes['inject-native-token-cost.js'] -or
+    $verification.required_locale_script_sha256 -ne $hashes['inject-locale-i18n.js']) {
     throw 'Release verification evidence is invalid'
 }
 if ([IO.Path]::IsPathRooted([string]$verification.staging_directory) -or
@@ -134,7 +136,8 @@ try {
         'ChatGPT-Fix-Packer.exe',
         'ChatGPT-Fix-Setup.exe',
         'ChatGPT-Fix-Locale.exe',
-        'scripts\inject-native-token-cost.js'
+        'scripts\inject-native-token-cost.js',
+        'scripts\inject-locale-i18n.js'
     )
     $actualZipFiles = @(Get-ChildItem -LiteralPath $extractRoot -Recurse -File | ForEach-Object {
         [IO.Path]::GetRelativePath($extractRoot, $_.FullName)
@@ -148,6 +151,8 @@ try {
     }
     $zipInjectorHash = (Get-FileHash -LiteralPath (Join-Path $extractRoot 'scripts\inject-native-token-cost.js') -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($zipInjectorHash -ne $hashes['inject-native-token-cost.js']) { throw 'Zip injector hash mismatch' }
+    $zipLocaleInjectorHash = (Get-FileHash -LiteralPath (Join-Path $extractRoot 'scripts\inject-locale-i18n.js') -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($zipLocaleInjectorHash -ne $hashes['inject-locale-i18n.js']) { throw 'Zip locale injector hash mismatch' }
 }
 finally {
     if (Test-Path -LiteralPath $extractRoot) { Remove-Item -LiteralPath $extractRoot -Recurse -Force }
@@ -159,5 +164,5 @@ finally {
     source_commit = $ExpectedSourceCommit.ToLowerInvariant()
     verified = $true
     hashed_assets = $hashedAssets.Count
-    zip_payload_files = 6
+    zip_payload_files = 7
 } | ConvertTo-Json -Depth 3
