@@ -1644,9 +1644,6 @@ namespace ChatGPTFixSetup
             // Never overwrite an unrelated shortcut. When a generic name is
             // occupied, use a product-specific fallback and persist exactly
             // which two files this installer owns.
-            const string aumid = @"shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App";
-            string windows = Environment.GetEnvironmentVariable("SystemRoot") ?? @"C:\Windows";
-            string explorer = Path.Combine(windows, "explorer.exe");
             string launcher = Path.Combine(installRoot, "bin", "ChatGPT-Fix-Launcher.exe");
             if (!File.Exists(launcher))
                 throw new FileNotFoundException("无法创建 wrapper 快捷方式：Launcher 不存在。", launcher);
@@ -1661,7 +1658,7 @@ namespace ChatGPTFixSetup
                     ShortcutOwnership ownership = ReadShortcutOwnership(installRoot);
                     Func<string, bool> isOfficialOwnedOrLegacy = delegate(string path)
                     {
-                        return IsOwnedOfficialShortcut(path)
+                        return IsOwnedOfficialShortcut(path, launcher)
                             || IsLegacyV101OfficialShortcut(path, installRoot)
                             || IsLegacyV102OfficialFallback(path);
                     };
@@ -1749,9 +1746,9 @@ namespace ChatGPTFixSetup
                     officialTemp = Path.Combine(lnkDir, ".chatgpt-fix-official-" + Guid.NewGuid().ToString("N") + ".lnk");
                     wrapperTemp = Path.Combine(lnkDir, ".chatgpt-fix-wrapper-" + Guid.NewGuid().ToString("N") + ".lnk");
                     dynamic official = ws.CreateShortcut(officialTemp);
-                    official.TargetPath = explorer;
-                    official.Arguments = aumid;
-                    official.WorkingDirectory = windows;
+                    official.TargetPath = launcher;
+                    official.Arguments = "";
+                    official.WorkingDirectory = Path.GetDirectoryName(launcher);
                     official.Description = "ChatGPT official entry (managed by ChatGPT-Fix v1.0.5)";
                     official.Save();
                     dynamic wrapper = ws.CreateShortcut(wrapperTemp);
@@ -1760,7 +1757,7 @@ namespace ChatGPTFixSetup
                     wrapper.WorkingDirectory = Path.GetDirectoryName(launcher);
                     wrapper.Description = "ChatGPT-Fix Launcher wrapper (managed by ChatGPT-Fix v1.0.5)";
                     wrapper.Save();
-                    if (!IsOwnedOfficialShortcut(officialTemp)
+                    if (!IsOwnedOfficialShortcut(officialTemp, launcher)
                         || !IsOwnedWrapperShortcut(wrapperTemp, launcher))
                         throw new IOException("临时快捷方式属性验证失败。");
 
@@ -1770,7 +1767,7 @@ namespace ChatGPTFixSetup
                     receipt.CommittedWrapperBytes = File.ReadAllBytes(wrapperTemp);
                     CommitShortcutFile(wrapperTemp, wrapperPath, receipt.PreviousWrapperBytes);
                     wrapperTemp = null;
-                    if (!IsOwnedOfficialShortcut(officialPath)
+                    if (!IsOwnedOfficialShortcut(officialPath, launcher)
                         || !IsOwnedWrapperShortcut(wrapperPath, launcher))
                         throw new IOException("已提交的快捷方式属性验证失败。");
                     WriteShortcutOwnership(installRoot, officialPath, wrapperPath);
@@ -2000,25 +1997,24 @@ namespace ChatGPTFixSetup
             bool requireOwnedRemoval)
         {
             if (!File.Exists(path)) return true;
-            bool owned = official ? IsOwnedOfficialShortcut(path) : IsOwnedWrapperShortcut(path, launcher);
+            bool owned = official ? IsOwnedOfficialShortcut(path, launcher) : IsOwnedWrapperShortcut(path, launcher);
             if (!owned && !official && allowLegacyV101)
                 owned = IsLegacyV101WrapperShortcut(path, launcher);
             if (owned) File.Delete(path);
             return owned ? !File.Exists(path) : !requireOwnedRemoval;
         }
 
-        private static bool IsOwnedOfficialShortcut(string path)
+        private static bool IsOwnedOfficialShortcut(string path, string launcher)
         {
             try
             {
                 Type wsType = Type.GetTypeFromProgID("WScript.Shell");
-                if (wsType == null || !File.Exists(path)) return false;
+                if (wsType == null || !File.Exists(path) || !File.Exists(launcher)) return false;
                 dynamic ws = Activator.CreateInstance(wsType);
                 dynamic shortcut = ws.CreateShortcut(path);
-                string windows = Environment.GetEnvironmentVariable("SystemRoot") ?? @"C:\Windows";
-                return PathsEqual((string)shortcut.TargetPath, Path.Combine(windows, "explorer.exe"))
-                    && string.Equals((string)shortcut.Arguments, @"shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App", StringComparison.Ordinal)
-                    && PathsEqual((string)shortcut.WorkingDirectory, windows)
+                return PathsEqual((string)shortcut.TargetPath, launcher)
+                    && string.Equals((string)shortcut.Arguments, "", StringComparison.Ordinal)
+                    && PathsEqual((string)shortcut.WorkingDirectory, Path.GetDirectoryName(launcher))
                     && string.Equals((string)shortcut.Description,
                         "ChatGPT official entry (managed by ChatGPT-Fix v1.0.5)", StringComparison.Ordinal);
             }

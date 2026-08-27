@@ -271,11 +271,11 @@ try {
         [Environment]::SetEnvironmentVariable('TEST_UNINSTALL_SUBKEY', $savedUninstallSubkey)
     }
     $migratedShortcut = $legacyShell.CreateShortcut($migrationLegacy)
-    if ($migratedShortcut.TargetPath -ne (Join-Path $windows 'explorer.exe') -or
-        $migratedShortcut.Arguments -ne 'shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App' -or
-        $migratedShortcut.WorkingDirectory -ne $windows -or
+    if ($migratedShortcut.TargetPath -ne $installedLauncher -or
+        $migratedShortcut.Arguments -ne '' -or
+        $migratedShortcut.WorkingDirectory -ne (Split-Path -Parent $installedLauncher) -or
         $migratedShortcut.Description -ne 'ChatGPT official entry (managed by ChatGPT-Fix v1.0.5)') {
-        throw 'legacy standard shortcut was not upgraded to the v1.0.5 official entry'
+        throw 'legacy standard shortcut was not upgraded to the v1.0.5 launcher entry'
     }
     if (Test-Path -LiteralPath $migrationFallback) { throw 'verified v1.0.2 fallback shortcut was not removed after standard-name migration' }
     $migratedWrapper = $legacyShell.CreateShortcut($migrationLegacyWrapper)
