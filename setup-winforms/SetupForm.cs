@@ -1064,15 +1064,18 @@ namespace ChatGPTFixSetup
             EnsureNoReparseComponents(Path.Combine(installRoot, "state"));
             Directory.CreateDirectory(installRoot);
             Directory.CreateDirectory(baseline);
-            var copied = DirStats(appDirectory);
+            int filesStaged;
+            long totalBytes;
+            string manifestJson = BuildHashManifestJson(appDirectory, out filesStaged, out totalBytes);
+            if (filesStaged == 0) throw new IOException("复制后的官方 app 目录为空，拒绝发布 verified state。");
             string normalizedBaseline = baseline.Replace('\\', '/');
             string stateJson =
                 "{\"schema\":\"chatgpt_fix.staging.v1\",\"source_package_full_name\":\"" + JsonEscape(packageName) +
-                "\",\"source_version\":\"\",\"source_hash_manifest\":[{\"relative_path\":\"ChatGPT.exe\",\"bytes\":" +
-                new FileInfo(sourceExe).Length + ",\"sha256\":\"" + Sha256(sourceExe) +
-                "\"}],\"staging_root\":\"" + JsonEscape(normalizedBaseline) +
+                "\",\"source_version\":\"" + JsonEscape(ExtractPackageVersion(packageName)) +
+                "\",\"source_hash_manifest\":" + manifestJson +
+                ",\"staging_root\":\"" + JsonEscape(normalizedBaseline) +
                 "\",\"baseline_root\":\"" + JsonEscape(normalizedBaseline) +
-                "\",\"files_staged\":" + copied.Item1 + ",\"total_bytes\":" + copied.Item2 +
+                "\",\"files_staged\":" + filesStaged + ",\"total_bytes\":" + totalBytes +
                 ",\"state\":\"verified\",\"created_at_utc\":\"" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") + "\"}\n";
             string pointerJson = "{\"schema\":\"chatgpt_fix.pointer.v1\",\"baseline_root\":\"" +
                 JsonEscape(normalizedBaseline) + "\"}\n";
@@ -1080,6 +1083,54 @@ namespace ChatGPTFixSetup
             // last write and the sole commit point observed by Launcher.
             WriteTextAtomic(Path.Combine(baseline, "state.json"), stateJson);
             WriteTextAtomic(Path.Combine(installRoot, "current.json"), pointerJson);
+        }
+
+        private static string ExtractPackageVersion(string packageName)
+        {
+            if (string.IsNullOrEmpty(packageName)) return "";
+            foreach (string part in packageName.Split('_'))
+            {
+                Version parsed;
+                if (Version.TryParse(part, out parsed)) return part;
+            }
+            return "";
+        }
+
+        private static string StripLongPathPrefix(string path)
+        {
+            if (path == null) return null;
+            if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+                return @"\\" + path.Substring(8);
+            if (path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+                return path.Substring(4);
+            return path;
+        }
+
+        private static string BuildHashManifestJson(string appDirectory, out int fileCount, out long totalBytes)
+        {
+            string root = StripLongPathPrefix(Path.GetFullPath(appDirectory)).TrimEnd('\\', '/');
+            var manifest = new StringBuilder("[");
+            bool first = true;
+            fileCount = 0;
+            totalBytes = 0;
+            foreach (string file in Directory.GetFiles(LongPath(appDirectory), "*", SearchOption.AllDirectories))
+            {
+                string normalized = StripLongPathPrefix(file);
+                string prefix = root + Path.DirectorySeparatorChar;
+                if (!normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("官方 app 文件越界，拒绝生成 manifest：" + file);
+                string relative = normalized.Substring(prefix.Length).Replace('\\', '/');
+                long bytes = FileLength(file);
+                if (!first) manifest.Append(',');
+                first = false;
+                manifest.Append("{\"relative_path\":\"").Append(JsonEscape(relative)
+                    ).Append("\",\"bytes\":").Append(bytes).Append(",\"sha256\":\"")
+                    .Append(Sha256(file)).Append("\"}");
+                fileCount++;
+                totalBytes = checked(totalBytes + bytes);
+            }
+            manifest.Append(']');
+            return manifest.ToString();
         }
 
         private static void WriteTextAtomic(string path, string content)

@@ -178,7 +178,7 @@ try {
     $integrationRoot = Join-Path $tempRoot 'integration'
     # The compiled test assembly resolves its payload from its own directory.
     $integrationPayload = $tempRoot
-    $integrationPackage = Join-Path $integrationRoot 'official-package'
+    $integrationPackage = Join-Path $integrationRoot 'OpenAI.Codex_26.820.9563.0_x64__fixture'
     $integrationInstall = Join-Path $integrationRoot 'install'
     $integrationShell = Join-Path $integrationRoot 'shell'
     foreach ($dir in @($integrationPayload, $integrationPackage, $integrationInstall, $integrationShell)) {
@@ -230,6 +230,16 @@ try {
             -not (Test-Path -LiteralPath (Join-Path $integrationBaseline 'state.json') -PathType Leaf) -or
             -not (Test-Path -LiteralPath $integrationCopied -PathType Leaf)) {
             throw 'full long-path install did not publish state and copied deep file'
+        }
+        $integrationState = Get-Content -LiteralPath (Join-Path $integrationBaseline 'state.json') -Raw | ConvertFrom-Json
+        $integrationDeepRelative = $integrationDeep.Substring($integrationApp.Length + 1).Replace('\','/') + '/deep-fixture.txt'
+        $integrationDeepEntry = @($integrationState.source_hash_manifest | Where-Object { $_.relative_path -eq $integrationDeepRelative })
+        if ([string]$integrationState.source_version -ne '26.820.9563.0' -or
+            [int64]$integrationState.files_staged -ne @($integrationState.source_hash_manifest).Count -or
+            [int64]$integrationState.total_bytes -ne (@($integrationState.source_hash_manifest) | Measure-Object -Property bytes -Sum).Sum -or
+            $integrationDeepEntry.Count -ne 1 -or
+            [string]$integrationDeepEntry[0].sha256 -ne (Get-FileHash -LiteralPath $integrationDeepFile -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw 'full long-path install published an incomplete staging manifest'
         }
         Write-Output 'FULL LONG-PATH INSTALL TEST PASSED'
     } finally {
