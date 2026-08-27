@@ -138,6 +138,39 @@ try {
     if (-not $statsFailed) { throw 'DirStats swallowed an enumeration error' }
     Write-Output 'DIR STATS ERROR PROPAGATION TEST PASSED'
 
+    # The package root itself can be short while a nested Appx resource path
+    # exceeds MAX_PATH. DirStats must enumerate that tree through the long
+    # path-aware branch instead of relying on the root length.
+    $longRoot = Join-Path $tempRoot 'long-tree'
+    $longLeaf = $longRoot
+    for ($index = 0; $index -lt 9; $index++) {
+        $longLeaf = Join-Path $longLeaf ('segment-' + ('x' * 24))
+    }
+    New-Item -ItemType Directory -Path $longLeaf -Force | Out-Null
+    $longFile = Join-Path $longLeaf 'fixture.txt'
+    [IO.File]::WriteAllText($longFile, 'long-path-fixture')
+    if ($longFile.Length -le 260) { throw 'long-path fixture did not exceed MAX_PATH' }
+    try {
+        $longStats = $dirStats.Invoke($null, [object[]]@([string]$longRoot))
+    } catch {
+        throw ('DirStats failed for a short-root long-path tree: ' + $_.Exception)
+    }
+    if ($longStats.Item1 -ne 1 -or $longStats.Item2 -ne 17) {
+        throw ('DirStats returned unexpected long-path stats: ' + $longStats)
+    }
+    Write-Output 'LONG NESTED PATH STATS TEST PASSED'
+
+    # LongPath must prefix the short tree root too. The deepest Appx entries
+    # are longer than MAX_PATH even when the package root itself is not; a
+    # root-length threshold leaves .NET Framework recursion on the legacy path.
+    $longPath = $setupType.GetMethod('LongPath', $flags)
+    if (-not $longPath) { throw 'LongPath helper is missing' }
+    $prefixedRoot = [string]$longPath.Invoke($null, [object[]]@([string]$longRoot))
+    if ($prefixedRoot -ne ('\\?\' + $longRoot)) {
+        throw ('LongPath did not prefix a short absolute root: ' + $prefixedRoot)
+    }
+    Write-Output 'SHORT ROOT LONG-PATH PREFIX TEST PASSED'
+
     # A repeat install reconciles an existing injected baseline against the
     # official source before the next NTC ensure. The old receipt is removed
     # only after source equality is proven, and the old backup is preserved.

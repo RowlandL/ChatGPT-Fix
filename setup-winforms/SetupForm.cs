@@ -1542,13 +1542,13 @@ namespace ChatGPTFixSetup
             }
         }
 
-        // Prepends the Windows long-path prefix (\\?\) ONLY when the path is
-        // near MAX_PATH (260), so the native CopyFile can handle deeply
-        // nested directories (resources\cua_node\... in this package have
-        // paths > 260 chars). Short paths are left untouched.
+        // Prepends the Windows long-path prefix (\\?\) to every rooted
+        // filesystem path. The package root can be short while a descendant
+        // is over MAX_PATH; prefixing only a long root leaves .NET Framework
+        // recursive enumeration on the legacy path and raises
+        // PathTooLongException before FileLength can repair the leaf.
         private static string LongPath(string path)
         {
-            if (path.Length < 250) return path;
             if (path.StartsWith(@"\\?\")) return path;
             if (path.Length >= 3 && path[1] == ':' && path[2] == '\\')
                 return @"\\?\" + path;
