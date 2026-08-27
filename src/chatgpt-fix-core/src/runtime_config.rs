@@ -277,6 +277,9 @@ fn write_desktop_snapshot(snapshot_path: &Path, section: &str) -> Result<(), Con
             )
         })?;
     }
+    if fs::read_to_string(snapshot_path).ok().as_deref() == Some(section) {
+        return Ok(());
+    }
     let temp_path = snapshot_path.with_extension("toml.tmp");
     fs::write(&temp_path, section.as_bytes()).map_err(|error| {
         ContractError::new(

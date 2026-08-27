@@ -5,12 +5,75 @@
 #![windows_subsystem = "windows"]
 
 use std::ffi::OsStr;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 use chatgpt_fix_core::{LaunchV1, PlanDecision, ReceiptV1, SafeRelativePath, sha256_bytes};
 
 const PRODUCT_NAME: &str = "ChatGPT-Fix-Launcher";
+const DESKTOP_CONFIG_SYNC_INTERVAL: Duration = Duration::from_millis(750);
+
+type DesktopConfigMonitor = (Arc<AtomicBool>, JoinHandle<()>);
+
+fn start_desktop_config_monitor(program_root: &Path) -> DesktopConfigMonitor {
+    let stop = Arc::new(AtomicBool::new(false));
+    let monitor_stop = Arc::clone(&stop);
+    let state_dir = program_root.join("state");
+    let log_root = program_root.to_owned();
+    let handle = std::thread::spawn(move || {
+        while !monitor_stop.load(Ordering::Acquire) {
+            match chatgpt_fix_core::preserve_desktop_section(&state_dir) {
+                Ok(true) => write_desktop_sync_event(&log_root, "restored"),
+                Ok(false) => {}
+                Err(_) => write_desktop_sync_event(&log_root, "error"),
+            }
+            let mut waited = Duration::ZERO;
+            while waited < DESKTOP_CONFIG_SYNC_INTERVAL && !monitor_stop.load(Ordering::Acquire) {
+                let step = Duration::from_millis(100).min(DESKTOP_CONFIG_SYNC_INTERVAL - waited);
+                std::thread::sleep(step);
+                waited += step;
+            }
+        }
+    });
+    (stop, handle)
+}
+
+fn stop_desktop_config_monitor(monitor: Option<DesktopConfigMonitor>) {
+    if let Some((stop, handle)) = monitor {
+        stop.store(true, Ordering::Release);
+        let _ = handle.join();
+    }
+}
+
+fn write_desktop_sync_event(program_root: &Path, event: &str) {
+    let log_path = program_root.join("logs").join("desktop-config-sync.jsonl");
+    let Some(parent) = log_path.parent() else {
+        return;
+    };
+    if std::fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+    else {
+        return;
+    };
+    let _ = writeln!(
+        file,
+        "{{\"at\":\"{}\",\"event\":\"desktop_config_sync\",\"status\":\"{}\"}}",
+        chatgpt_fix_core::utc_now_rfc3339(),
+        event
+    );
+}
 
 /// Default program root: `%LOCALAPPDATA%\Programs\ChatGPT-Fix`.
 fn default_program_root() -> Option<PathBuf> {
@@ -96,6 +159,7 @@ fn run_live_launch(program_root: &Path) -> ExitCode {
             return ExitCode::from(3);
         }
     };
+    let monitor = spawned_pid.map(|_| start_desktop_config_monitor(program_root));
     match launch.to_json() {
         Ok(json) => {
             println!("{json}");
@@ -107,16 +171,20 @@ fn run_live_launch(program_root: &Path) -> ExitCode {
                 #[cfg(windows)]
                 {
                     let _ = chatgpt_fix_core::win32::wait_for_process(pid);
+                    stop_desktop_config_monitor(monitor);
                     if let Err(error) =
                         chatgpt_fix_core::preserve_desktop_section(&program_root.join("state"))
                     {
                         eprintln!("desktop_config_exit_snapshot_warning: {error}");
                     }
                 }
+                #[cfg(not(windows))]
+                stop_desktop_config_monitor(monitor);
             }
             ExitCode::SUCCESS
         }
         Err(error) => {
+            stop_desktop_config_monitor(monitor);
             eprintln!("launch serialize failed: {error}");
             ExitCode::from(4)
         }

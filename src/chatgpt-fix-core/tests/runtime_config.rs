@@ -94,6 +94,23 @@ fn desktop_section_live_value_wins_over_stale_copy() {
 }
 
 #[test]
+fn desktop_section_snapshot_refresh_is_idempotent() {
+    let dir = temp_dir("snapshot-idempotent");
+    let config = dir.join("config.toml");
+    let state = dir.join("state");
+    let input = "[desktop]\nselected-avatar-id = \"custom:firefly\"\n";
+    std::fs::write(&config, input).expect("write config");
+
+    preserve_desktop_section_at(&config, &state).expect("write snapshot");
+    let snapshot = state.join("desktop-config.toml");
+    let before = std::fs::read(&snapshot).expect("read snapshot");
+    preserve_desktop_section_at(&config, &state).expect("refresh snapshot");
+    let after = std::fs::read(&snapshot).expect("read refreshed snapshot");
+
+    assert_eq!(before, after);
+}
+
+#[test]
 fn desktop_section_restores_only_keys_missing_from_a_partial_rewrite() {
     let dir = temp_dir("partial-rewrite");
     let config = dir.join("config.toml");
