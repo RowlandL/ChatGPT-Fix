@@ -1437,7 +1437,7 @@ namespace ChatGPTFixSetup
             var cfg = GetTestConfig();
             if (!string.IsNullOrEmpty(cfg.package_root)) return cfg.package_root;
             var psi = new ProcessStartInfo(FindWindowsPowerShell(),
-                "-NoProfile -NonInteractive -Command \"(Get-AppxPackage -Name 'OpenAI.Codex' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty InstallLocation)\"")
+                "-NoProfile -NonInteractive -Command \"(Get-AppxPackage -Name 'OpenAI.Codex' -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1 -ExpandProperty InstallLocation)\"")
             { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
             BoundedProcessResult result = RunProcessBounded(psi, 30000, "DiscoverPackage PowerShell");
             if (result.ExitCode != 0)
