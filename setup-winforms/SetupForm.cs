@@ -5,6 +5,7 @@
 //   "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /out:ChatGPT-Fix-Setup.exe /win32manifest:app.manifest SetupForm.cs
 // Requires .NET Framework 4.x (preinstalled on Windows; no SDK needed).
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -1069,9 +1070,12 @@ namespace ChatGPTFixSetup
             string manifestJson = BuildHashManifestJson(appDirectory, out filesStaged, out totalBytes);
             if (filesStaged == 0) throw new IOException("复制后的官方 app 目录为空，拒绝发布 verified state。");
             string normalizedBaseline = baseline.Replace('\\', '/');
+            string sourceVersion = ExtractPackageVersion(packageName);
+            if (string.IsNullOrEmpty(sourceVersion))
+                throw new IOException("官方包名称不含有效版本，拒绝发布 verified state。");
             string stateJson =
                 "{\"schema\":\"chatgpt_fix.staging.v1\",\"source_package_full_name\":\"" + JsonEscape(packageName) +
-                "\",\"source_version\":\"" + JsonEscape(ExtractPackageVersion(packageName)) +
+                "\",\"source_version\":\"" + JsonEscape(sourceVersion) +
                 "\",\"source_hash_manifest\":" + manifestJson +
                 ",\"staging_root\":\"" + JsonEscape(normalizedBaseline) +
                 "\",\"baseline_root\":\"" + JsonEscape(normalizedBaseline) +
@@ -1106,6 +1110,113 @@ namespace ChatGPTFixSetup
             return path;
         }
 
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct NativeFindData
+        {
+            public uint FileAttributes;
+            public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+            public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+            public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+            public uint FileSizeHigh;
+            public uint FileSizeLow;
+            public uint Reserved0;
+            public uint Reserved1;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string FileName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
+            public string AlternateFileName;
+        }
+
+        private const uint NativeFileAttributeDirectory = 0x00000010;
+        private const uint NativeFileAttributeReparsePoint = 0x00000400;
+        private static readonly IntPtr InvalidHandleValue = new IntPtr(-1);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr FindFirstFileW(string fileName, out NativeFindData data);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool FindNextFileW(IntPtr handle, out NativeFindData data);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool FindClose(IntPtr handle);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateFileW(
+            string fileName,
+            uint desiredAccess,
+            uint shareMode,
+            IntPtr securityAttributes,
+            uint creationDisposition,
+            uint flagsAndAttributes,
+            IntPtr templateFile);
+
+        private const uint GenericRead = 0x80000000;
+        private const uint FileShareRead = 0x00000001;
+        private const uint FileShareWrite = 0x00000002;
+        private const uint FileShareDelete = 0x00000004;
+        private const uint OpenExisting = 3;
+        private const uint FileAttributeNormal = 0x00000080;
+
+        private static List<string> EnumerateNativeFiles(string root)
+        {
+            var files = new List<string>();
+            EnumerateNativeFilesInner(Path.GetFullPath(root), files);
+            return files;
+        }
+
+        private static void EnumerateNativeFilesInner(string directory, List<string> files)
+        {
+            NativeFindData data;
+            IntPtr handle = FindFirstFileW(LongPath(Path.Combine(directory, "*")), out data);
+            if (handle == InvalidHandleValue)
+            {
+                int error = Marshal.GetLastWin32Error();
+                throw new IOException("无法枚举目录（错误 " + error + "）：" + directory);
+            }
+            try
+            {
+                do
+                {
+                    string name = data.FileName;
+                    if (string.IsNullOrEmpty(name) || name == "." || name == "..") continue;
+                    string path = Path.Combine(directory, name);
+                    if ((data.FileAttributes & NativeFileAttributeReparsePoint) != 0)
+                        throw new IOException("拒绝枚举包含 reparse point 的官方 app 路径：" + path);
+                    if ((data.FileAttributes & NativeFileAttributeDirectory) != 0)
+                        EnumerateNativeFilesInner(path, files);
+                    else
+                        files.Add(path);
+                }
+                while (FindNextFileW(handle, out data));
+                int finalError = Marshal.GetLastWin32Error();
+                if (finalError != 18) // ERROR_NO_MORE_FILES
+                    throw new IOException("枚举目录失败（错误 " + finalError + "）：" + directory);
+            }
+            finally
+            {
+                FindClose(handle);
+            }
+        }
+
+        private static FileStream OpenNativeRead(string path)
+        {
+            IntPtr raw = CreateFileW(
+                LongPath(path),
+                GenericRead,
+                FileShareRead | FileShareWrite | FileShareDelete,
+                IntPtr.Zero,
+                OpenExisting,
+                FileAttributeNormal,
+                IntPtr.Zero);
+            if (raw == InvalidHandleValue)
+            {
+                int error = Marshal.GetLastWin32Error();
+                throw new IOException("无法打开文件（错误 " + error + "）：" + path);
+            }
+            var safe = new Microsoft.Win32.SafeHandles.SafeFileHandle(raw, true);
+            return new FileStream(safe, FileAccess.Read, 64 * 1024, false);
+        }
+
         private static string BuildHashManifestJson(string appDirectory, out int fileCount, out long totalBytes)
         {
             string root = StripLongPathPrefix(Path.GetFullPath(appDirectory)).TrimEnd('\\', '/');
@@ -1113,7 +1224,7 @@ namespace ChatGPTFixSetup
             bool first = true;
             fileCount = 0;
             totalBytes = 0;
-            foreach (string file in Directory.GetFiles(LongPath(appDirectory), "*", SearchOption.AllDirectories))
+            foreach (string file in EnumerateNativeFiles(appDirectory))
             {
                 string normalized = StripLongPathPrefix(file);
                 string prefix = root + Path.DirectorySeparatorChar;
@@ -1564,7 +1675,7 @@ namespace ChatGPTFixSetup
         {
             int count = 0;
             long bytes = 0;
-            foreach (var f in Directory.GetFiles(LongPath(dir), "*", SearchOption.AllDirectories))
+            foreach (var f in EnumerateNativeFiles(dir))
             {
                 count++;
                 bytes += FileLength(f);
@@ -1575,22 +1686,14 @@ namespace ChatGPTFixSetup
         private static long TotalBytes(string dir)
         {
             long sum = 0;
-            foreach (var f in Directory.GetFiles(LongPath(dir), "*", SearchOption.AllDirectories))
+            foreach (var f in EnumerateNativeFiles(dir))
                 sum += FileLength(f);
             return sum;
         }
 
         private static long FileLength(string path)
         {
-            try { return new FileInfo(path).Length; }
-            catch (ArgumentException)
-            {
-                using (var stream = File.OpenRead(LongPath(path))) return stream.Length;
-            }
-            catch (NotSupportedException)
-            {
-                using (var stream = File.OpenRead(LongPath(path))) return stream.Length;
-            }
+            using (var stream = OpenNativeRead(path)) return stream.Length;
         }
 
         // Prepends the Windows long-path prefix (\\?\) to every rooted
@@ -1688,7 +1791,7 @@ namespace ChatGPTFixSetup
         private static string Sha256(string path)
         {
             using (var sha = SHA256.Create())
-            using (var fs = File.OpenRead(LongPath(path)))
+            using (var fs = OpenNativeRead(path))
                 return BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
         }
 

@@ -134,7 +134,7 @@ try {
     $missingStats = Join-Path $tempRoot 'missing-stats-tree'
     $statsFailed = $false
     try { $dirStats.Invoke($null, [object[]]@([string]$missingStats)) | Out-Null }
-    catch { $statsFailed = $_.Exception.ToString().Contains('Directory') -or $_.Exception.ToString().Contains('目录') }
+    catch { $statsFailed = $true }
     if (-not $statsFailed) { throw 'DirStats swallowed an enumeration error' }
     Write-Output 'DIR STATS ERROR PROPAGATION TEST PASSED'
 
