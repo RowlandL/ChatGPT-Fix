@@ -135,7 +135,7 @@ foreach ($name in $requiredExecutables) {
     $signature = Get-AuthenticodeSignature -LiteralPath $path
     $artifacts += [pscustomobject]@{
         name = $name
-        path = $path
+        path = [System.IO.Path]::GetRelativePath($staging, $path).Replace('\', '/')
         sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
         file_version = $item.VersionInfo.FileVersion
         product_version = $item.VersionInfo.ProductVersion
@@ -167,7 +167,7 @@ Assert-ReleaseBinariesHaveNoBuildPath -Paths $artifactPaths -ForbiddenMarkers (G
 
 [pscustomobject]@{
     release_version = $ReleaseVersion
-    staging_directory = $staging
+    staging_directory = '.'
     payload_verified = $true
     installer_executed = $false
     artifacts = $artifacts

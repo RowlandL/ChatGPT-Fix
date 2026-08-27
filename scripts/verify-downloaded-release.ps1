@@ -111,9 +111,17 @@ if ($verification.release_version -ne $ExpectedVersion -or
     $verification.required_script_sha256 -ne $hashes['inject-native-token-cost.js']) {
     throw 'Release verification evidence is invalid'
 }
+if ([IO.Path]::IsPathRooted([string]$verification.staging_directory) -or
+    [string]$verification.staging_directory -match '(^|[\\/])\.\.([\\/]|$)') {
+    throw 'Release verification evidence contains an absolute or escaping staging path'
+}
 foreach ($artifact in @($verification.artifacts)) {
     if (-not $hashes.ContainsKey($artifact.name) -or $hashes[$artifact.name] -ne $artifact.sha256) {
         throw "Verification evidence hash mismatch: $($artifact.name)"
+    }
+    if ([IO.Path]::IsPathRooted([string]$artifact.path) -or
+        [string]$artifact.path -match '(^|[\\/])\.\.([\\/]|$)') {
+        throw "Release verification evidence contains an absolute or escaping artifact path: $($artifact.name)"
     }
 }
 

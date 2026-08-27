@@ -1,0 +1,84 @@
+name: Release v1.0.5
+
+on:
+  push:
+    tags:
+      - 'v1.0.5'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-v1.0.5
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/tags/v1.0.5'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout immutable release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install locked Rust toolchain
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
+          rustup default 1.97.1
+          rustc --version
+          cargo --version
+
+      - name: Assert release identity and historical immutability
+        run: |
+          if ((git describe --exact-match --tags HEAD) -ne 'v1.0.5') { throw 'workflow is not running at v1.0.5' }
+          if ((Get-Content VERSION -Raw).Trim() -ne '1.0.5') { throw 'VERSION is not 1.0.5' }
+          if ((git rev-parse 'v1.0.1^{commit}') -ne '22260d0695efe52f9546a9fa236a7a40b21eeb33') { throw 'historical v1.0.1 tag moved' }
+          git diff --exit-code 77919fe58fa7a3c4204d69d16cbeeb042aa5762f -- checksums/1.0.1-win-x64.sha256 records/builds/1.0.1-win-x64 records/release-notes-v1.0.1.md
+          if ($LASTEXITCODE -ne 0) { throw 'historical v1.0.1 evidence changed' }
+
+      - name: Check, lint, test, and build workspace
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo test --locked --workspace
+          cargo build --locked --workspace --release
+
+      - name: Assemble and verify v1.0.5
+        id: payload
+        run: |
+          $releaseDir = Join-Path $env:RUNNER_TEMP 'chatgpt-fix-v1.0.5-release'
+          $setupDir = Join-Path $env:RUNNER_TEMP 'chatgpt-fix-v1.0.5-setup'
+          New-Item -ItemType Directory -Path $releaseDir, $setupDir -Force | Out-Null
+          $setup = & pwsh.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\test-setup-static.ps1 -OutputDirectory $setupDir -ReleaseVersion 1.0.5 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "WinForms Setup build failed: $LASTEXITCODE" }
+          & pwsh.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\prepare-local-release.ps1 `
+            -OutputDirectory $releaseDir `
+            -ReleaseVersion 1.0.5 `
+            -RustArtifactDirectory (Join-Path $PWD 'target\release') `
+            -SetupArtifact $setup.artifact `
+            -RepositoryRoot $PWD | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'chatgpt-fix-v1.0.5-preparation.json')
+          if ($LASTEXITCODE -ne 0) { throw "local release candidate preparation failed: $LASTEXITCODE" }
+          "release_dir=$releaseDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload immutable release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatgpt-fix-v1.0.5-release
+          path: ${{ steps.payload.outputs.release_dir }}
+
+      - name: Create GitHub Release without replacement
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          gh release view v1.0.5 *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'v1.0.5 already exists; refusing to replace assets' }
+          $releaseDir = '${{ steps.payload.outputs.release_dir }}'
+          $assets = @(Get-ChildItem -LiteralPath $releaseDir -File | Sort-Object Name | ForEach-Object FullName)
+          if ($assets.Count -ne 13) { throw "release asset count is $($assets.Count), expected 13" }
+          gh release create v1.0.5 --verify-tag --title 'ChatGPT-Fix v1.0.5' --notes-file (Join-Path $releaseDir 'RELEASE-NOTES.md') $assets
