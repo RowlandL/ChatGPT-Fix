@@ -34,7 +34,7 @@ Windows 本地修复版 ChatGPT 桌面客户端 —— 官方包隔离运行，�
 ## v1.0.5 发布契约
 
 - **稳定用户 profile**：Launcher 统一使用 `<install-root>/profile/user-data`，不再使用 `<baseline>/profile/user-data`。基线升级不会重置宠物、上下文用量显示、外观、登录态或 Desktop 设置；首次启动会迁移旧基线 profile，并保留失败时的原目录。
-- **快捷方式修复**：安装器继续保留官方 `ChatGPT` AUMID 入口，并将 `ChatGPT-Fix-Launcher` 固定到修复版 Launcher；旧版直连基线的快捷方式需由 v1.0.5 Setup 修复。
+- **快捷方式修复**：安装器管理的 `ChatGPT` 与 `ChatGPT-Fix-Launcher` 入口都指向修复版 Launcher；前者保留通用名称以兼容既有打开方式，后者明确标示修复入口。旧版直连基线的快捷方式由 v1.0.5 Setup 迁移；名称已被非本产品快捷方式占用时，安装器保留原文件并使用受管 fallback 名称。
 - **官方版本同步边界**：Setup 每次安装/升级都会按注册版本选择最新的官方 OpenAI.Codex 包并生成对应 baseline；运行中的 Launcher 不会自动复制或覆盖 baseline。官方包更新后，请在手动关闭 ChatGPT 后重新运行本目录的 v1.0.5 Setup，以保留稳定 profile 并切换到新版本。
 - **NTC 保持禁用**：本版本不重新启用 Token 用量注入，避免已知的会话切换卡顿。
 
