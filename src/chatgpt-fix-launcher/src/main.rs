@@ -135,11 +135,12 @@ fn main() -> ExitCode {
 /// `ChatGPT-Fix-Launcher launch --live <program-root>`.
 ///
 /// Reads `<program-root>/current.json` (chatgpt_fix.pointer.v1), resolves the
-/// baseline root, and launches `ChatGPT.exe` from that baseline. If the
-/// pointer is missing or its baseline is gone, falls back to discovering the
-/// official OpenAI.Codex package location via `Get-AppxPackage` so a package
-/// update (new version directory) never breaks the launch. Writes a launch
-/// receipt to stdout. A4a-authorized.
+/// verified baseline root, and launches `ChatGPT.exe` from that baseline.
+/// Missing or invalid pointers fail closed; official package discovery and
+/// baseline refresh are performed by Setup, not by a running Launcher. This
+/// keeps launch side effects bounded and prevents an update from replacing a
+/// user's active baseline behind the launcher's back. Writes a launch receipt
+/// to stdout. A4a-authorized.
 fn run_live_launch(program_root: &Path) -> ExitCode {
     if let Err(error) = chatgpt_fix_core::sanitize_codex_config() {
         // A stale optional config entry must never prevent the official app
