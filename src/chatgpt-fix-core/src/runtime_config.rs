@@ -178,9 +178,9 @@ pub fn sanitize_codex_config() -> Result<bool, ContractError> {
 /// `<state_dir>/desktop-config.toml` (its own state dir; the config
 /// manager's data is never touched):
 ///
-/// - When config.toml still contains a `[desktop]` section, the copy is
-///   refreshed from it (the live value always wins — the user may have just
-///   changed the theme in the app).
+/// - When config.toml still contains a `[desktop]` section, live values win
+///   and keys missing from a partial external rewrite are restored from the
+///   copy before it is refreshed.
 /// - When config.toml LOST the section (external rewrite), the copy is
 ///   appended back, preserving the user's own choices. The original file is
 ///   backed up once as `config.toml.bak-chatgpt-fix-desktop`.
@@ -220,27 +220,19 @@ pub fn preserve_desktop_section_at(
     };
 
     match extract_desktop_section(&text) {
-        Some(section) => {
-            // Live section present: refresh the copy (atomic swap).
-            if let Some(parent) = snapshot_path.parent() {
-                fs::create_dir_all(parent).map_err(|error| {
-                    ContractError::new(
-                        "state_dir_create",
-                        parent.to_string_lossy(),
-                        format!("cannot create state dir: {error}"),
-                    )
-                })?;
+        Some(live_section) => {
+            let merged_section = fs::read_to_string(&snapshot_path)
+                .ok()
+                .and_then(|snapshot| extract_desktop_section(&snapshot))
+                .and_then(|snapshot| merge_missing_desktop_assignments(&live_section, &snapshot));
+            let changed = merged_section.is_some();
+            let final_section = merged_section.as_deref().unwrap_or(&live_section);
+            if changed {
+                let restored = text.replacen(&live_section, final_section, 1);
+                write_restored_config(config_path, &restored)?;
             }
-            let tmp = snapshot_path.with_extension("toml.tmp");
-            fs::write(&tmp, section.as_bytes()).map_err(|error| {
-                ContractError::new(
-                    "snapshot_write",
-                    tmp.to_string_lossy(),
-                    format!("cannot write desktop copy: {error}"),
-                )
-            })?;
-            let _ = fs::rename(&tmp, &snapshot_path);
-            Ok(false)
+            write_desktop_snapshot(&snapshot_path, final_section)?;
+            Ok(changed)
         }
         None => {
             // Section lost (external rewrite): restore from the copy.
@@ -269,45 +261,169 @@ pub fn preserve_desktop_section_at(
             restored.push_str(section.trim_end_matches(['\r', '\n']));
             restored.push('\n');
 
-            let backup_path = config_path.with_file_name("config.toml.bak-chatgpt-fix-desktop");
-            if !backup_path.exists() {
-                fs::copy(config_path, &backup_path).map_err(|error| {
-                    ContractError::new(
-                        "config_backup_failed",
-                        backup_path.to_string_lossy(),
-                        format!("cannot preserve the original config.toml: {error}"),
-                    )
-                })?;
-            }
-            let temp_path = config_path.with_extension("toml.desktop.tmp");
-            fs::write(&temp_path, restored.as_bytes()).map_err(|error| {
-                ContractError::new(
-                    "config_write_failed",
-                    temp_path.to_string_lossy(),
-                    format!("cannot write restored config.toml: {error}"),
-                )
-            })?;
-            if let Err(first_error) = fs::rename(&temp_path, config_path) {
-                fs::remove_file(config_path).map_err(|error| {
-                    ContractError::new(
-                        "config_commit_failed",
-                        config_path.to_string_lossy(),
-                        format!(
-                            "cannot replace config.toml after rename error {first_error}: {error}"
-                        ),
-                    )
-                })?;
-                fs::rename(&temp_path, config_path).map_err(|error| {
-                    ContractError::new(
-                        "config_commit_failed",
-                        config_path.to_string_lossy(),
-                        format!("cannot commit restored config.toml: {error}"),
-                    )
-                })?;
-            }
+            write_restored_config(config_path, &restored)?;
             Ok(true)
         }
     }
+}
+
+fn write_desktop_snapshot(snapshot_path: &Path, section: &str) -> Result<(), ContractError> {
+    if let Some(parent) = snapshot_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            ContractError::new(
+                "state_dir_create",
+                parent.to_string_lossy(),
+                format!("cannot create state dir: {error}"),
+            )
+        })?;
+    }
+    let temp_path = snapshot_path.with_extension("toml.tmp");
+    fs::write(&temp_path, section.as_bytes()).map_err(|error| {
+        ContractError::new(
+            "snapshot_write",
+            temp_path.to_string_lossy(),
+            format!("cannot write desktop copy: {error}"),
+        )
+    })?;
+    if let Err(first_error) = fs::rename(&temp_path, snapshot_path) {
+        if snapshot_path.exists() {
+            fs::remove_file(snapshot_path).map_err(|error| {
+                ContractError::new(
+                    "snapshot_commit_failed",
+                    snapshot_path.to_string_lossy(),
+                    format!(
+                        "cannot replace desktop copy after rename error {first_error}: {error}"
+                    ),
+                )
+            })?;
+        }
+        fs::rename(&temp_path, snapshot_path).map_err(|error| {
+            ContractError::new(
+                "snapshot_commit_failed",
+                snapshot_path.to_string_lossy(),
+                format!("cannot commit desktop copy: {error}"),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn write_restored_config(config_path: &Path, restored: &str) -> Result<(), ContractError> {
+    let backup_path = config_path.with_file_name("config.toml.bak-chatgpt-fix-desktop");
+    if !backup_path.exists() {
+        fs::copy(config_path, &backup_path).map_err(|error| {
+            ContractError::new(
+                "config_backup_failed",
+                backup_path.to_string_lossy(),
+                format!("cannot preserve the original config.toml: {error}"),
+            )
+        })?;
+    }
+    let temp_path = config_path.with_extension("toml.desktop.tmp");
+    fs::write(&temp_path, restored.as_bytes()).map_err(|error| {
+        ContractError::new(
+            "config_write_failed",
+            temp_path.to_string_lossy(),
+            format!("cannot write restored config.toml: {error}"),
+        )
+    })?;
+    if let Err(first_error) = fs::rename(&temp_path, config_path) {
+        fs::remove_file(config_path).map_err(|error| {
+            ContractError::new(
+                "config_commit_failed",
+                config_path.to_string_lossy(),
+                format!("cannot replace config.toml after rename error {first_error}: {error}"),
+            )
+        })?;
+        fs::rename(&temp_path, config_path).map_err(|error| {
+            ContractError::new(
+                "config_commit_failed",
+                config_path.to_string_lossy(),
+                format!("cannot commit restored config.toml: {error}"),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn merge_missing_desktop_assignments(live: &str, snapshot: &str) -> Option<String> {
+    let live_keys = desktop_assignment_blocks(live)
+        .into_iter()
+        .map(|(key, _)| key)
+        .collect::<std::collections::HashSet<_>>();
+    let missing = desktop_assignment_blocks(snapshot)
+        .into_iter()
+        .filter(|(key, _)| !live_keys.contains(key))
+        .map(|(_, block)| block)
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return None;
+    }
+
+    let insert_at = desktop_root_table_end(live);
+    let mut merged = String::with_capacity(
+        live.len() + missing.iter().map(String::len).sum::<usize>() + missing.len(),
+    );
+    merged.push_str(&live[..insert_at]);
+    if !merged.ends_with('\n') {
+        merged.push('\n');
+    }
+    for block in missing {
+        merged.push_str(block.trim_end_matches(['\r', '\n']));
+        merged.push('\n');
+    }
+    merged.push_str(&live[insert_at..]);
+    Some(merged)
+}
+
+fn desktop_assignment_blocks(section: &str) -> Vec<(String, String)> {
+    let mut blocks = Vec::<(String, String)>::new();
+    let mut in_root = false;
+    for raw_line in section.split_inclusive('\n') {
+        let body = raw_line.trim_end_matches(['\r', '\n']);
+        let trimmed = body.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            if in_root && trimmed != "[desktop]" {
+                break;
+            }
+            in_root = trimmed == "[desktop]";
+            continue;
+        }
+        if !in_root {
+            continue;
+        }
+        if let Some(key) = desktop_assignment_key(body) {
+            blocks.push((key.to_owned(), raw_line.to_owned()));
+        } else if let Some((_, block)) = blocks.last_mut() {
+            block.push_str(raw_line);
+        }
+    }
+    blocks
+}
+
+fn desktop_assignment_key(line: &str) -> Option<&str> {
+    if line.trim_start() != line || line.starts_with('#') {
+        return None;
+    }
+    let (key, _) = line.split_once('=')?;
+    let key = key.trim();
+    (!key.is_empty()).then_some(key)
+}
+
+fn desktop_root_table_end(section: &str) -> usize {
+    let mut offset = 0;
+    let mut in_root = false;
+    for raw_line in section.split_inclusive('\n') {
+        let trimmed = raw_line.trim_end_matches(['\r', '\n']).trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            if in_root && trimmed != "[desktop]" {
+                return offset;
+            }
+            in_root = trimmed == "[desktop]";
+        }
+        offset += raw_line.len();
+    }
+    section.len()
 }
 
 /// Extract the `[desktop]` section (header + keys, including `[desktop.*]`

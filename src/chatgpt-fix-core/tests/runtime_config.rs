@@ -94,6 +94,47 @@ fn desktop_section_live_value_wins_over_stale_copy() {
 }
 
 #[test]
+fn desktop_section_restores_only_keys_missing_from_a_partial_rewrite() {
+    let dir = temp_dir("partial-rewrite");
+    let config = dir.join("config.toml");
+    let state = dir.join("state");
+    std::fs::write(
+        &config,
+        concat!(
+            "[desktop]\n",
+            "localeOverride = \"zh-CN\"\n",
+            "selected-avatar-id = \"custom:firefly\"\n",
+            "show-context-window-usage = true\n",
+            "avatar-overlay-mascot-width-px = 112\n",
+        ),
+    )
+    .expect("write full desktop config");
+    preserve_desktop_section_at(&config, &state).expect("snapshot full desktop config");
+
+    // A config owner rewrites the section from an incomplete template. The
+    // user's newer pet size remains authoritative, while missing preferences
+    // must come back from the last-known-good snapshot.
+    std::fs::write(
+        &config,
+        concat!(
+            "[desktop]\n",
+            "localeOverride = \"zh-CN\"\n",
+            "avatar-overlay-mascot-width-px = 200\n",
+        ),
+    )
+    .expect("write partial desktop config");
+
+    let changed = preserve_desktop_section_at(&config, &state).expect("merge desktop config");
+    assert!(changed);
+    let restored = std::fs::read_to_string(&config).expect("read restored config");
+    assert!(restored.contains("selected-avatar-id = \"custom:firefly\""));
+    assert!(restored.contains("show-context-window-usage = true"));
+    assert!(restored.contains("avatar-overlay-mascot-width-px = 200"));
+    assert!(!restored.contains("avatar-overlay-mascot-width-px = 112"));
+    assert_eq!(restored.matches("selected-avatar-id").count(), 1);
+}
+
+#[test]
 fn desktop_section_absent_without_copy_is_a_noop() {
     let dir = temp_dir("noop");
     let config = dir.join("config.toml");

@@ -107,6 +107,11 @@ fn run_live_launch(program_root: &Path) -> ExitCode {
                 #[cfg(windows)]
                 {
                     let _ = chatgpt_fix_core::win32::wait_for_process(pid);
+                    if let Err(error) =
+                        chatgpt_fix_core::preserve_desktop_section(&program_root.join("state"))
+                    {
+                        eprintln!("desktop_config_exit_snapshot_warning: {error}");
+                    }
                 }
             }
             ExitCode::SUCCESS
