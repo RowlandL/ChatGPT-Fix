@@ -1662,7 +1662,8 @@ namespace ChatGPTFixSetup
                     Func<string, bool> isOfficialOwnedOrLegacy = delegate(string path)
                     {
                         return IsOwnedOfficialShortcut(path)
-                            || IsLegacyV101OfficialShortcut(path, installRoot);
+                            || IsLegacyV101OfficialShortcut(path, installRoot)
+                            || IsLegacyV102OfficialFallback(path);
                     };
                     string standardOfficialPath = Path.Combine(lnkDir, "ChatGPT.lnk");
                     string officialPath = File.Exists(standardOfficialPath)
@@ -1686,14 +1687,15 @@ namespace ChatGPTFixSetup
                         && PathsEqual(officialPath, standardOfficialPath))
                     {
                         string recordedFallbackPath = Path.Combine(lnkDir, ownership.OfficialName);
-                        if (File.Exists(recordedFallbackPath) && IsOwnedOfficialShortcut(recordedFallbackPath))
+                        if (File.Exists(recordedFallbackPath) && isOfficialOwnedOrLegacy(recordedFallbackPath))
                             supersededOfficialPath = recordedFallbackPath;
                     }
 
                     Func<string, bool> isWrapperOwnedOrLegacy = delegate(string path)
                     {
                         return IsOwnedWrapperShortcut(path, launcher)
-                            || IsLegacyV101WrapperShortcut(path, launcher);
+                            || IsLegacyV101WrapperShortcut(path, launcher)
+                            || IsLegacyV102WrapperFallback(path, launcher);
                     };
                     string standardWrapperPath = Path.Combine(lnkDir, "ChatGPT-Fix-Launcher.lnk");
                     string wrapperPath = File.Exists(standardWrapperPath)
@@ -1717,7 +1719,7 @@ namespace ChatGPTFixSetup
                         && PathsEqual(wrapperPath, standardWrapperPath))
                     {
                         string recordedFallbackPath = Path.Combine(lnkDir, ownership.WrapperName);
-                        if (File.Exists(recordedFallbackPath) && IsOwnedWrapperShortcut(recordedFallbackPath, launcher))
+                        if (File.Exists(recordedFallbackPath) && isWrapperOwnedOrLegacy(recordedFallbackPath))
                             supersededWrapperPath = recordedFallbackPath;
                     }
 
@@ -1776,7 +1778,7 @@ namespace ChatGPTFixSetup
                     {
                         receipt.SupersededOfficialPath = supersededOfficialPath;
                         receipt.PreviousSupersededOfficialBytes = File.ReadAllBytes(supersededOfficialPath);
-                        if (!IsOwnedOfficialShortcut(supersededOfficialPath)
+                        if (!isOfficialOwnedOrLegacy(supersededOfficialPath)
                             || !FileBytesEqual(supersededOfficialPath, receipt.PreviousSupersededOfficialBytes))
                             throw new IOException("旧官方 fallback 快捷方式在删除前发生所有权冲突：" + supersededOfficialPath);
                         File.Delete(supersededOfficialPath);
@@ -1786,7 +1788,7 @@ namespace ChatGPTFixSetup
                     {
                         receipt.SupersededWrapperPath = supersededWrapperPath;
                         receipt.PreviousSupersededWrapperBytes = File.ReadAllBytes(supersededWrapperPath);
-                        if (!IsOwnedWrapperShortcut(supersededWrapperPath, launcher)
+                        if (!isWrapperOwnedOrLegacy(supersededWrapperPath)
                             || !FileBytesEqual(supersededWrapperPath, receipt.PreviousSupersededWrapperBytes))
                             throw new IOException("旧 wrapper fallback 快捷方式在删除前发生所有权冲突：" + supersededWrapperPath);
                         File.Delete(supersededWrapperPath);
@@ -2083,6 +2085,48 @@ namespace ChatGPTFixSetup
                     && string.Equals((string)shortcut.Arguments, "", StringComparison.Ordinal)
                     && PathsEqual((string)shortcut.WorkingDirectory, Path.GetDirectoryName(launcher))
                     && string.IsNullOrEmpty((string)shortcut.Description);
+            }
+            catch { return false; }
+        }
+
+        private static bool IsLegacyV102OfficialFallback(string path)
+        {
+            try
+            {
+                if (!string.Equals(Path.GetFileName(path), "ChatGPT (official).lnk",
+                    StringComparison.OrdinalIgnoreCase)) return false;
+                if (!File.Exists(path)) return false;
+                Type wsType = Type.GetTypeFromProgID("WScript.Shell");
+                if (wsType == null) return false;
+                dynamic ws = Activator.CreateInstance(wsType);
+                dynamic shortcut = ws.CreateShortcut(path);
+                string windows = Environment.GetEnvironmentVariable("SystemRoot") ?? @"C:\Windows";
+                return PathsEqual((string)shortcut.TargetPath, Path.Combine(windows, "explorer.exe"))
+                    && string.Equals((string)shortcut.Arguments,
+                        @"shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App", StringComparison.Ordinal)
+                    && PathsEqual((string)shortcut.WorkingDirectory, windows)
+                    && string.Equals((string)shortcut.Description,
+                        "ChatGPT official entry (managed by ChatGPT-Fix v1.0.2)", StringComparison.Ordinal);
+            }
+            catch { return false; }
+        }
+
+        private static bool IsLegacyV102WrapperFallback(string path, string launcher)
+        {
+            try
+            {
+                if (!string.Equals(Path.GetFileName(path), "ChatGPT-Fix-Launcher (ChatGPT-Fix).lnk",
+                    StringComparison.OrdinalIgnoreCase)) return false;
+                if (!File.Exists(path)) return false;
+                Type wsType = Type.GetTypeFromProgID("WScript.Shell");
+                if (wsType == null) return false;
+                dynamic ws = Activator.CreateInstance(wsType);
+                dynamic shortcut = ws.CreateShortcut(path);
+                return PathsEqual((string)shortcut.TargetPath, launcher)
+                    && string.Equals((string)shortcut.Arguments, "", StringComparison.Ordinal)
+                    && PathsEqual((string)shortcut.WorkingDirectory, Path.GetDirectoryName(launcher))
+                    && string.Equals((string)shortcut.Description,
+                        "ChatGPT-Fix Launcher wrapper (managed by ChatGPT-Fix v1.0.2)", StringComparison.Ordinal);
             }
             catch { return false; }
         }

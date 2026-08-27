@@ -67,9 +67,9 @@ try {
     if ($clock.ElapsedMilliseconds -ge 5000) { throw 'bounded Setup process helper exceeded its cleanup bound' }
     Write-Output 'BOUNDED SETUP PROCESS TEST PASSED'
 
-    # Missing injector: all four executable payload entries exist, but the
+    # Missing injector: all five executable payload entries exist, but the
     # colocated script does not. The transaction must fail before scripts/ is written.
-    foreach ($name in @('ChatGPT-Fix-Launcher.exe','ChatGPT-Fix-Manager.exe','ChatGPT-Fix-Packer.exe','ChatGPT-Fix-Setup.exe')) {
+    foreach ($name in @('ChatGPT-Fix-Launcher.exe','ChatGPT-Fix-Manager.exe','ChatGPT-Fix-Packer.exe','ChatGPT-Fix-Setup.exe','ChatGPT-Fix-Locale.exe')) {
         [IO.File]::WriteAllText((Join-Path $payload $name), 'test')
     }
     $deploy = $setupType.GetMethod('DeployPayloadTransactional', $flags)
@@ -89,7 +89,7 @@ try {
     # are restored from that receipt.
     $payloadInstall = Join-Path $tempRoot 'payload-transaction'
     New-Item -ItemType Directory -Path $payloadInstall -Force | Out-Null
-    foreach ($name in @('ChatGPT-Fix-Launcher.exe','ChatGPT-Fix-Manager.exe','ChatGPT-Fix-Packer.exe','ChatGPT-Fix-Setup.exe')) {
+    foreach ($name in @('ChatGPT-Fix-Launcher.exe','ChatGPT-Fix-Manager.exe','ChatGPT-Fix-Packer.exe','ChatGPT-Fix-Setup.exe','ChatGPT-Fix-Locale.exe')) {
         [IO.File]::WriteAllText((Join-Path $payload $name), ('new-' + $name))
         $destination = Join-Path $payloadInstall ('bin\' + $name)
         New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
@@ -103,7 +103,7 @@ try {
     $rollbackPayload = $setupType.GetMethod('RollbackPayloadDeployment', $flags)
     if (-not $rollbackPayload) { throw 'payload rollback helper is missing' }
     $rollbackPayload.Invoke($null, [object[]]@($deployment)) | Out-Null
-    foreach ($name in @('ChatGPT-Fix-Launcher.exe','ChatGPT-Fix-Manager.exe','ChatGPT-Fix-Packer.exe','ChatGPT-Fix-Setup.exe')) {
+    foreach ($name in @('ChatGPT-Fix-Launcher.exe','ChatGPT-Fix-Manager.exe','ChatGPT-Fix-Packer.exe','ChatGPT-Fix-Setup.exe','ChatGPT-Fix-Locale.exe')) {
         $destination = Join-Path $payloadInstall ('bin\' + $name)
         if ((Get-Content -LiteralPath $destination -Raw) -ne ('old-' + $name)) { throw 'payload rollback did not restore ' + $name }
     }
@@ -274,16 +274,16 @@ try {
     if ($migratedShortcut.TargetPath -ne (Join-Path $windows 'explorer.exe') -or
         $migratedShortcut.Arguments -ne 'shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App' -or
         $migratedShortcut.WorkingDirectory -ne $windows -or
-        $migratedShortcut.Description -ne 'ChatGPT official entry (managed by ChatGPT-Fix v1.0.2)') {
-        throw 'legacy standard shortcut was not upgraded to the v1.0.2 official entry'
+        $migratedShortcut.Description -ne 'ChatGPT official entry (managed by ChatGPT-Fix v1.0.5)') {
+        throw 'legacy standard shortcut was not upgraded to the v1.0.5 official entry'
     }
     if (Test-Path -LiteralPath $migrationFallback) { throw 'verified v1.0.2 fallback shortcut was not removed after standard-name migration' }
     $migratedWrapper = $legacyShell.CreateShortcut($migrationLegacyWrapper)
     if ($migratedWrapper.TargetPath -ne $installedLauncher -or
         $migratedWrapper.Arguments -ne '' -or
         $migratedWrapper.WorkingDirectory -ne (Split-Path -Parent $installedLauncher) -or
-        $migratedWrapper.Description -ne 'ChatGPT-Fix Launcher wrapper (managed by ChatGPT-Fix v1.0.2)') {
-        throw 'legacy standard wrapper was not upgraded to the v1.0.2 managed entry'
+        $migratedWrapper.Description -ne 'ChatGPT-Fix Launcher wrapper (managed by ChatGPT-Fix v1.0.5)') {
+        throw 'legacy standard wrapper was not upgraded to the v1.0.5 managed entry'
     }
     if (Test-Path -LiteralPath $migrationWrapperFallback) { throw 'verified v1.0.2 wrapper fallback was not removed after standard-name migration' }
     if ((Get-Content -LiteralPath (Join-Path $install 'state\shortcut-ownership.json') -Raw) -notmatch '"official_name":"ChatGPT\.lnk"') {
