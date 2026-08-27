@@ -251,6 +251,8 @@ try {
     $migrationWrapperFallbackShortcut.Description = 'ChatGPT-Fix Launcher wrapper (managed by ChatGPT-Fix v1.0.2)'
     $migrationWrapperFallbackShortcut.Save()
     New-Item -ItemType Directory -Path (Join-Path $install 'state') -Force | Out-Null
+    $stableIcon = Join-Path $install 'chatgpt-icon.ico'
+    [IO.File]::WriteAllText($stableIcon, 'icon-fixture')
     [IO.File]::WriteAllText((Join-Path $install 'state\shortcut-ownership.json'), '{"schema":"chatgpt_fix.shortcut_ownership.v1","official_name":"ChatGPT (official).lnk","wrapper_name":"ChatGPT-Fix-Launcher (ChatGPT-Fix).lnk"}')
     $createShortcuts = $setupType.GetMethod('CreateShortcuts', $flags)
     if (-not $createShortcuts) { throw 'shortcut creation helper is missing' }
@@ -274,6 +276,7 @@ try {
     if ($migratedShortcut.TargetPath -ne $installedLauncher -or
         $migratedShortcut.Arguments -ne '' -or
         $migratedShortcut.WorkingDirectory -ne (Split-Path -Parent $installedLauncher) -or
+        $migratedShortcut.IconLocation -ne ($stableIcon + ',0') -or
         $migratedShortcut.Description -ne 'ChatGPT official entry (managed by ChatGPT-Fix v1.0.5)') {
         throw 'legacy standard shortcut was not upgraded to the v1.0.5 launcher entry'
     }

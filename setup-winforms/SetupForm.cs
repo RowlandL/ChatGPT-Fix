@@ -490,6 +490,7 @@ namespace ChatGPTFixSetup
                 Directory.CreateDirectory(resources);
                 EnsureNoReparseComponents(resources);
                 WriteTextAtomic(Path.Combine(resources, "chatgpt-fix.fixture"), "launcher-owned-v1");
+                EnsureStableShortcutIcon(installRoot, baseline);
 
                 // 4. Shortcuts are deployable payload too: validate them before
                 // current.json/state.json and the uninstall entry are written.
@@ -600,6 +601,7 @@ namespace ChatGPTFixSetup
                 string setup = Path.Combine(installRoot, "bin", "ChatGPT-Fix-Setup.exe");
                 if (!File.Exists(launcher) || !File.Exists(setup))
                     throw new FileNotFoundException("修复需要完整的已安装 Launcher 和 Setup；请重新运行 v1.0.5 安装包。");
+                EnsureStableShortcutIcon(installRoot, null);
                 shortcutReceipt = CreateShortcuts(installRoot);
                 RegisterUninstallEntry(installRoot);
                 return true;
@@ -1647,6 +1649,8 @@ namespace ChatGPTFixSetup
             string launcher = Path.Combine(installRoot, "bin", "ChatGPT-Fix-Launcher.exe");
             if (!File.Exists(launcher))
                 throw new FileNotFoundException("无法创建 wrapper 快捷方式：Launcher 不存在。", launcher);
+            string icon = EnsureStableShortcutIcon(installRoot, null);
+            if (string.IsNullOrEmpty(icon)) icon = launcher;
             Exception lastError = null;
             for (int attempt = 0; attempt < 2; attempt++)
             {
@@ -1749,16 +1753,20 @@ namespace ChatGPTFixSetup
                     official.TargetPath = launcher;
                     official.Arguments = "";
                     official.WorkingDirectory = Path.GetDirectoryName(launcher);
+                    official.IconLocation = icon + ",0";
                     official.Description = "ChatGPT official entry (managed by ChatGPT-Fix v1.0.5)";
                     official.Save();
                     dynamic wrapper = ws.CreateShortcut(wrapperTemp);
                     wrapper.TargetPath = launcher;
                     wrapper.Arguments = "";
                     wrapper.WorkingDirectory = Path.GetDirectoryName(launcher);
+                    wrapper.IconLocation = icon + ",0";
                     wrapper.Description = "ChatGPT-Fix Launcher wrapper (managed by ChatGPT-Fix v1.0.5)";
                     wrapper.Save();
                     if (!IsOwnedOfficialShortcut(officialTemp, launcher)
-                        || !IsOwnedWrapperShortcut(wrapperTemp, launcher))
+                        || !IsOwnedWrapperShortcut(wrapperTemp, launcher)
+                        || !HasShortcutIcon(officialTemp, icon)
+                        || !HasShortcutIcon(wrapperTemp, icon))
                         throw new IOException("临时快捷方式属性验证失败。");
 
                     receipt.CommittedOfficialBytes = File.ReadAllBytes(officialTemp);
@@ -1768,7 +1776,9 @@ namespace ChatGPTFixSetup
                     CommitShortcutFile(wrapperTemp, wrapperPath, receipt.PreviousWrapperBytes);
                     wrapperTemp = null;
                     if (!IsOwnedOfficialShortcut(officialPath, launcher)
-                        || !IsOwnedWrapperShortcut(wrapperPath, launcher))
+                        || !IsOwnedWrapperShortcut(wrapperPath, launcher)
+                        || !HasShortcutIcon(officialPath, icon)
+                        || !HasShortcutIcon(wrapperPath, icon))
                         throw new IOException("已提交的快捷方式属性验证失败。");
                     WriteShortcutOwnership(installRoot, officialPath, wrapperPath);
                     if (!string.IsNullOrEmpty(supersededOfficialPath))
@@ -2083,6 +2093,63 @@ namespace ChatGPTFixSetup
                     && string.IsNullOrEmpty((string)shortcut.Description);
             }
             catch { return false; }
+        }
+
+        private static bool HasShortcutIcon(string path, string icon)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(icon) || !File.Exists(path) || !File.Exists(icon)) return false;
+                Type wsType = Type.GetTypeFromProgID("WScript.Shell");
+                if (wsType == null) return false;
+                dynamic ws = Activator.CreateInstance(wsType);
+                dynamic shortcut = ws.CreateShortcut(path);
+                return string.Equals((string)shortcut.IconLocation, icon + ",0", StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
+        private static string EnsureStableShortcutIcon(string installRoot, string preferredBaseline)
+        {
+            string stable = Path.Combine(installRoot, "chatgpt-icon.ico");
+            EnsureNoReparseComponents(installRoot);
+            EnsureNoReparseComponents(stable);
+            if (File.Exists(stable)) return stable;
+
+            string source = null;
+            if (!string.IsNullOrEmpty(preferredBaseline))
+            {
+                string candidate = Path.Combine(preferredBaseline, "app", "resources", "icon-chatgpt.ico");
+                if (File.Exists(candidate)) source = candidate;
+            }
+            if (source == null)
+            {
+                string baselines = Path.Combine(installRoot, "baselines");
+                if (Directory.Exists(baselines))
+                {
+                    string[] directories = Directory.GetDirectories(baselines);
+                    Array.Sort(directories, StringComparer.OrdinalIgnoreCase);
+                    for (int i = directories.Length - 1; i >= 0; i--)
+                    {
+                        string candidate = Path.Combine(directories[i], "app", "resources", "icon-chatgpt.ico");
+                        if (File.Exists(candidate)) { source = candidate; break; }
+                    }
+                }
+            }
+            if (source == null) return null;
+            EnsureNoReparseComponents(source);
+            string temporary = stable + ".tmp-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                File.Copy(source, temporary, false);
+                if (File.Exists(stable)) File.Delete(temporary);
+                else File.Move(temporary, stable);
+            }
+            finally
+            {
+                try { if (File.Exists(temporary)) File.Delete(temporary); } catch { }
+            }
+            return File.Exists(stable) ? stable : null;
         }
 
         private static bool IsLegacyV102OfficialFallback(string path)
