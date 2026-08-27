@@ -36,6 +36,7 @@ Must ($manager.Contains('WindowsPowerShell') -and $manager.Contains('Result<Path
 Must (-not $manager.Contains('fn which(')) 'Manager still has a PATH helper resolver'
 Must ($rustSetup.Contains('WindowsPowerShell') -and $rustSetup.Contains('Result<PathBuf, String>')) 'Rust Setup PowerShell resolver is not absolute/fail-closed'
 Must (-not $rustSetup.Contains('fn which(')) 'Rust Setup still has a PATH helper resolver'
+Must ($rustSetup.Contains("Sort-Object Version -Descending | Select-Object -First 1")) 'Rust Setup does not select the newest registered official package'
 Must (-not (Has 'NeedsCopy(')) 'weak three-key baseline copy gate remains'
 Must ($source.Contains('CopyTree(Path.Combine(appRoot, "app"), appDst, total);')) 'install does not always reconcile official app tree'
 Must ($source.Contains('RunProcessBounded')) 'Setup process execution is not routed through bounded helper'

@@ -455,7 +455,7 @@ fn complete_one_click_config(root: &Path, launcher: &Path, progress: &dyn Fn(u64
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            "(Get-AppxPackage -Name 'OpenAI.Codex' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty InstallLocation)",
+            "(Get-AppxPackage -Name 'OpenAI.Codex' -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1 -ExpandProperty InstallLocation)",
         ])
         .output()
         && output.status.success()
