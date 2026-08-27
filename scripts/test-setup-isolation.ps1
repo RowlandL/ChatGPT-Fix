@@ -159,6 +159,17 @@ try {
         throw ('DirStats returned unexpected long-path stats: ' + $longStats)
     }
     Write-Output 'LONG NESTED PATH STATS TEST PASSED'
+    $totalBytes = $setupType.GetMethod('TotalBytes', $flags)
+    if (-not $totalBytes) { throw 'TotalBytes helper is missing' }
+    try {
+        $longTotal = [int64]$totalBytes.Invoke($null, [object[]]@([string]$longRoot))
+    } catch {
+        throw ('TotalBytes failed for a short-root long-path tree: ' + $_.Exception)
+    }
+    if ($longTotal -ne 17) {
+        throw ('TotalBytes returned unexpected long-path bytes: ' + $longTotal)
+    }
+    Write-Output 'LONG NESTED PATH PRESCAN TEST PASSED'
 
     # LongPath must prefix the short tree root too. The deepest Appx entries
     # are longer than MAX_PATH even when the package root itself is not; a
