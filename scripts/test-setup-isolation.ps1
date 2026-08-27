@@ -67,6 +67,25 @@ try {
     if ($clock.ElapsedMilliseconds -ge 5000) { throw 'bounded Setup process helper exceeded its cleanup bound' }
     Write-Output 'BOUNDED SETUP PROCESS TEST PASSED'
 
+    # A fresh install passes a baseline\app path that does not exist yet.
+    # CopyTree must create that working directory before Process.Start validates
+    # ProcessStartInfo.WorkingDirectory; otherwise Windows returns ERROR_DIRECTORY
+    # ("目录名称无效") before robocopy can create the destination.
+    $copyTree = $setupType.GetMethod('CopyTree', [Reflection.BindingFlags]'NonPublic,Instance')
+    if (-not $copyTree) { throw 'CopyTree helper is missing' }
+    $setupInstance = [Activator]::CreateInstance($setupType)
+    $copySource = Join-Path $tempRoot 'copy-source'
+    $copyDestination = Join-Path $tempRoot 'fresh-install\baselines\fixture\app'
+    New-Item -ItemType Directory -Path $copySource -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $copySource 'ChatGPT.exe'), 'copy-tree-fixture')
+    $copyTree.Invoke($setupInstance, [object[]]@([string]$copySource, [string]$copyDestination, [long]17)) | Out-Null
+    $copiedFile = Join-Path $copyDestination 'ChatGPT.exe'
+    if (-not (Test-Path -LiteralPath $copiedFile -PathType Leaf) -or
+        (Get-Content -LiteralPath $copiedFile -Raw) -ne 'copy-tree-fixture') {
+        throw 'CopyTree did not copy into a previously missing destination directory'
+    }
+    Write-Output 'FRESH DESTINATION COPY TEST PASSED'
+
     # Missing injector: all five executable payload entries exist, but the
     # colocated script does not. The transaction must fail before scripts/ is written.
     foreach ($name in @('ChatGPT-Fix-Launcher.exe','ChatGPT-Fix-Manager.exe','ChatGPT-Fix-Packer.exe','ChatGPT-Fix-Setup.exe','ChatGPT-Fix-Locale.exe')) {

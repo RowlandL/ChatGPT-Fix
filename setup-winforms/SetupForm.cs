@@ -1592,6 +1592,13 @@ namespace ChatGPTFixSetup
         // .NET Framework's ProcessStartInfo.Arguments string.
         private void CopyTree(string src, string dst, long total)
         {
+            // ProcessStartInfo validates WorkingDirectory before robocopy runs.
+            // A fresh install has no baseline directory yet, so create and
+            // validate it here instead of letting Windows report ERROR_DIRECTORY.
+            string workingDirectory = Path.GetDirectoryName(dst);
+            EnsureNoReparseComponents(workingDirectory);
+            Directory.CreateDirectory(workingDirectory);
+            EnsureNoReparseComponents(workingDirectory);
             string args = QuoteWindowsArgument(src) + " " + QuoteWindowsArgument(dst) +
                 " /E /R:0 /W:0 /NFL /NDL /NJH /NJS /NP";
             var psi = new ProcessStartInfo("robocopy.exe", args)
@@ -1600,7 +1607,7 @@ namespace ChatGPTFixSetup
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                WorkingDirectory = Path.GetDirectoryName(dst)
+                WorkingDirectory = workingDirectory
             };
             BoundedProcessResult result = RunProcessBounded(psi, 600000, "robocopy");
             if (result.ExitCode >= 8)
