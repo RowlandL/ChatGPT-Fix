@@ -171,6 +171,74 @@ try {
     }
     Write-Output 'LONG NESTED PATH PRESCAN TEST PASSED'
 
+    # Run the complete WinForms install transaction against a synthetic
+    # official package containing a deep path. This is the screenshot-level
+    # regression: discovery, robocopy, state publication and shortcut setup
+    # must all complete without touching the real install or Start Menu.
+    $integrationRoot = Join-Path $tempRoot 'integration'
+    # The compiled test assembly resolves its payload from its own directory.
+    $integrationPayload = $tempRoot
+    $integrationPackage = Join-Path $integrationRoot 'official-package'
+    $integrationInstall = Join-Path $integrationRoot 'install'
+    $integrationShell = Join-Path $integrationRoot 'shell'
+    foreach ($dir in @($integrationPayload, $integrationPackage, $integrationInstall, $integrationShell)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+    $integrationApp = Join-Path $integrationPackage 'app'
+    $integrationResources = Join-Path $integrationApp 'resources'
+    New-Item -ItemType Directory -Path $integrationResources -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $integrationApp 'ChatGPT.exe'), 'fake-chatgpt')
+    [IO.File]::WriteAllText((Join-Path $integrationResources 'app.asar'), 'fake-asar')
+    [IO.File]::WriteAllText((Join-Path $integrationResources 'icon-chatgpt.ico'), 'fake-icon')
+    $integrationDeep = $integrationApp
+    for ($index = 0; $index -lt 9; $index++) {
+        $integrationDeep = Join-Path $integrationDeep ('segment-' + ('y' * 24))
+    }
+    New-Item -ItemType Directory -Path $integrationDeep -Force | Out-Null
+    $integrationDeepFile = Join-Path $integrationDeep 'deep-fixture.txt'
+    [IO.File]::WriteAllText($integrationDeepFile, 'long-path-fixture')
+    if ($integrationDeepFile.Length -le 260) { throw 'integration long-path fixture did not exceed MAX_PATH' }
+    foreach ($name in @('ChatGPT-Fix-Launcher.exe','ChatGPT-Fix-Manager.exe','ChatGPT-Fix-Packer.exe','ChatGPT-Fix-Setup.exe','ChatGPT-Fix-Locale.exe')) {
+        [IO.File]::WriteAllText((Join-Path $integrationPayload $name), 'payload-' + $name)
+    }
+    New-Item -ItemType Directory -Path (Join-Path $integrationPayload 'scripts') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $integrationPayload 'scripts\inject-native-token-cost.js'), 'payload-injector')
+    $integrationGuid = [Guid]::NewGuid().ToString('N')
+    $integrationSubkey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\ChatGPT-Fix-LongPath-' + $integrationGuid
+    $integrationConfig = '{"install_root":"' + $integrationInstall.Replace('\','\\') + '","shell_root":"' +
+        $integrationShell.Replace('\','\\') + '","uninstall_subkey":"' + $integrationSubkey.Replace('\','\\') +
+        '","package_root":"' + $integrationPackage.Replace('\','\\') + '","skip_launch":"1"}'
+    [IO.File]::WriteAllText((Join-Path $tempRoot 'test-config.json'), $integrationConfig, (New-Object Text.UTF8Encoding($false)))
+    $configField = $setupType.GetField('_testConfig', [Reflection.BindingFlags]'NonPublic,Static')
+    if (-not $configField) { throw 'test config cache field is missing' }
+    $configField.SetValue($null, $null)
+    $setCliMode = $setupType.GetMethod('SetCliMode', [Reflection.BindingFlags]'NonPublic,Static')
+    if (-not $setCliMode) { throw 'CLI mode test hook is missing' }
+    $setCliMode.Invoke($null, [object[]]@($true)) | Out-Null
+    $doInstall = $setupType.GetMethod('DoInstall', [Reflection.BindingFlags]'NonPublic,Instance')
+    if (-not $doInstall) { throw 'DoInstall helper is missing' }
+    $integrationInstance = [Activator]::CreateInstance($setupType)
+    try {
+        $integrationOk = [bool]$doInstall.Invoke($integrationInstance, $null)
+        if (-not $integrationOk) {
+            throw ('full long-path install returned false: ' + $integrationInstance.LastError)
+        }
+        $integrationPkgName = (Get-Item -LiteralPath $integrationPackage).Name
+        $integrationBaseline = Join-Path $integrationInstall ('baselines\' + $integrationPkgName)
+        $integrationCopied = Join-Path $integrationBaseline ($integrationDeep.Substring($integrationPackage.Length + 1) + '\deep-fixture.txt')
+        if (-not (Test-Path -LiteralPath (Join-Path $integrationInstall 'current.json') -PathType Leaf) -or
+            -not (Test-Path -LiteralPath (Join-Path $integrationBaseline 'state.json') -PathType Leaf) -or
+            -not (Test-Path -LiteralPath $integrationCopied -PathType Leaf)) {
+            throw 'full long-path install did not publish state and copied deep file'
+        }
+        Write-Output 'FULL LONG-PATH INSTALL TEST PASSED'
+    } finally {
+        try { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($integrationSubkey, $false) } catch { }
+        $setCliMode.Invoke($null, [object[]]@($false)) | Out-Null
+        $configField.SetValue($null, $null)
+        Remove-Item -LiteralPath (Join-Path $tempRoot 'test-config.json') -Force -ErrorAction SilentlyContinue
+    }
+
     # LongPath must prefix the short tree root too. The deepest Appx entries
     # are longer than MAX_PATH even when the package root itself is not; a
     # root-length threshold leaves .NET Framework recursion on the legacy path.
